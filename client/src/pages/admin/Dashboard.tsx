@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Eye, MessageSquare, Star } from 'lucide-react';
+import { useLocation } from 'wouter';
+import { Eye, MessageSquare, Star, Send } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,10 +33,13 @@ import { useToast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
 
 export default function AdminDashboard() {
+  const [, setLocation] = useLocation();
   const [grievances, setGrievances] = useState(mockGrievances);
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
+  const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [replyText, setReplyText] = useState('');
+  const [messageText, setMessageText] = useState('');
   const [filterRating, setFilterRating] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const { toast } = useToast();
@@ -69,6 +73,23 @@ export default function AdminDashboard() {
     setReplyText('');
     setReplyDialogOpen(false);
     setSelectedGrievance(null);
+  };
+
+  const handleSendMessage = () => {
+    if (!selectedGrievance || !messageText.trim()) return;
+
+    toast({
+      title: 'Message Sent',
+      description: 'Your message has been sent to the user.',
+    });
+
+    setMessageText('');
+    setMessageDialogOpen(false);
+  };
+
+  const handleViewChatHistory = () => {
+    setMessageDialogOpen(false);
+    setLocation('/admin/chat-history');
   };
 
   const handleAssign = (grievanceId: string, department: string) => {
@@ -248,7 +269,7 @@ export default function AdminDashboard() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1">
                           <Button
                             size="sm"
                             variant="ghost"
@@ -267,6 +288,17 @@ export default function AdminDashboard() {
                             data-testid={`button-reply-${grievance.id}`}
                           >
                             <MessageSquare className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setSelectedGrievance(grievance);
+                              setMessageDialogOpen(true);
+                            }}
+                            data-testid={`button-message-${grievance.id}`}
+                          >
+                            <Send className="w-4 h-4" />
                           </Button>
                         </div>
                       </TableCell>
@@ -348,6 +380,31 @@ export default function AdminDashboard() {
             </Button>
             <Button onClick={handleReply} data-testid="button-send-reply">
               Send Reply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={messageDialogOpen} onOpenChange={setMessageDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Message</DialogTitle>
+            <DialogDescription>Send a direct message to the user</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="Type your message here..."
+            value={messageText}
+            onChange={(e) => setMessageText(e.target.value)}
+            rows={6}
+            data-testid="textarea-admin-message"
+          />
+          <DialogFooter className="flex gap-2">
+            <Button onClick={handleSendMessage} data-testid="button-send-message">
+              <Send className="w-4 h-4 mr-2" />
+              Send
+            </Button>
+            <Button variant="outline" onClick={handleViewChatHistory} data-testid="button-view-chat-history">
+              View Chat History
             </Button>
           </DialogFooter>
         </DialogContent>

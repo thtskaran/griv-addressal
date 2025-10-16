@@ -9,11 +9,17 @@ import { userRoleAtom } from '@/lib/atoms';
 import Login from '@/pages/Login';
 import UserDashboard from '@/pages/user/Dashboard';
 import SubmitGrievance from '@/pages/user/SubmitGrievance';
+import GrievancePreview from '@/pages/user/GrievancePreview';
 import UserNotifications from '@/pages/user/Notifications';
 import UserProfile from '@/pages/user/Profile';
 import AdminDashboard from '@/pages/admin/Dashboard';
 import Analytics from '@/pages/admin/Analytics';
+import ChatHistory from '@/pages/admin/ChatHistory';
+import GoogleDrive from '@/pages/admin/GoogleDrive';
+import DriveDashboard from '@/pages/admin/DriveDashboard';
 import AdminProfile from '@/pages/admin/Profile';
+import HostelRules from '@/pages/shared/HostelRules';
+import ExamDetails from '@/pages/shared/ExamDetails';
 import NotFound from '@/pages/not-found';
 
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -45,6 +51,12 @@ function AppRouter() {
           <Layout>
             <SubmitGrievance />
           </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/user/grievance-preview">
+        <ProtectedRoute allowedRole="user">
+          <GrievancePreview />
         </ProtectedRoute>
       </Route>
 
@@ -81,12 +93,57 @@ function AppRouter() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/admin/chat-history/:grievanceId?">
+        <ProtectedRoute allowedRole="admin">
+          <Layout>
+            <ChatHistory />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/google-drive">
+        <ProtectedRoute allowedRole="admin">
+          <Layout>
+            <GoogleDrive />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/drive-dashboard">
+        <ProtectedRoute allowedRole="admin">
+          <Layout>
+            <DriveDashboard />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/admin/profile">
         <ProtectedRoute allowedRole="admin">
           <Layout>
             <AdminProfile />
           </Layout>
         </ProtectedRoute>
+      </Route>
+
+      {/* Shared Routes - Accessible by both roles */}
+      <Route path="/hostel-rules">
+        {userRole ? (
+          <Layout>
+            <HostelRules />
+          </Layout>
+        ) : (
+          <Redirect to="/login" />
+        )}
+      </Route>
+
+      <Route path="/exam-details">
+        {userRole ? (
+          <Layout>
+            <ExamDetails />
+          </Layout>
+        ) : (
+          <Redirect to="/login" />
+        )}
       </Route>
 
       {/* 404 Fallback */}

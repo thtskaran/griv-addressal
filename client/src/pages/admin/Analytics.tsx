@@ -1,9 +1,13 @@
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { mockGrievances } from '@/lib/data';
+import KnowledgeGraph from '@/components/KnowledgeGraph';
 import { motion } from 'framer-motion';
 
 export default function Analytics() {
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
   // todo: remove mock functionality - Calculate category distribution
   const categoryData = mockGrievances.reduce((acc, g) => {
     const existing = acc.find((item) => item.name === g.category);
@@ -26,6 +30,14 @@ export default function Analytics() {
 
   const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
+  const handlePieClick = (data: any) => {
+    setSelectedCategory(data.name);
+  };
+
+  const categoryGrievances = selectedCategory
+    ? mockGrievances.filter((g) => g.category === selectedCategory)
+    : [];
+
   return (
     <div className="p-6 space-y-6">
       <motion.div
@@ -41,6 +53,7 @@ export default function Analytics() {
           <CardContent className="grid gap-8 md:grid-cols-2">
             <div>
               <h3 className="text-lg font-semibold mb-4">Grievances by Category</h3>
+              <p className="text-xs text-muted-foreground mb-2">Click on a segment to view details</p>
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
@@ -52,6 +65,8 @@ export default function Analytics() {
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
+                    onClick={handlePieClick}
+                    cursor="pointer"
                   >
                     {categoryData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -62,10 +77,17 @@ export default function Analytics() {
               </ResponsiveContainer>
               <div className="mt-4 flex flex-wrap gap-3">
                 {categoryData.map((item, index) => (
-                  <div key={item.name} className="flex items-center gap-2">
+                  <button
+                    key={item.name}
+                    onClick={() => setSelectedCategory(item.name)}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-full transition-all ${
+                      selectedCategory === item.name ? 'bg-primary/20 ring-2 ring-primary' : 'hover:bg-muted'
+                    }`}
+                    data-testid={`button-category-${item.name.toLowerCase()}`}
+                  >
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
                     <span className="text-sm">{item.name}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -92,6 +114,16 @@ export default function Analytics() {
           </CardContent>
         </Card>
       </motion.div>
+
+      {selectedCategory && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <KnowledgeGraph category={selectedCategory} grievances={categoryGrievances} />
+        </motion.div>
+      )}
     </div>
   );
 }

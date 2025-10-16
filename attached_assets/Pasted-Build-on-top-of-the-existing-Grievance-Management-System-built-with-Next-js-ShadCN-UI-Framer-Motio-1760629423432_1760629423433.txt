@@ -1,0 +1,118 @@
+Build on top of the existing Grievance Management System built with Next.js, ShadCN UI, Framer Motion, Recoil, and Manrope font.
+Maintain the same color palette, responsiveness, and design consistency.
+
+🔹 1. User “Grievance Preview” Page
+
+After a grievance is submitted, redirect the user to a Preview Page.
+
+This page should include:
+
+Preview of the uploaded image (top section, large, centered, rounded corners).
+
+Grievance title and description underneath.
+
+Two large buttons at the bottom:
+
+🟩 “Did you get help?” → shows a “Thank you, your grievance has been resolved” message.
+
+🟦 “Still Submit” → confirms submission and redirects the user to their dashboard.
+
+Animate transitions using Framer Motion (fade-in + upward slide).
+
+🔹 2. Admin Analytics Page Enhancement
+
+Enhance the existing analytics page that already shows a Pie Chart and Bar Graph.
+
+When the admin clicks on a segment of the pie chart (e.g., “Hostel”, “Academics”, “Sports”), dynamically display that category’s detailed analytics below the charts.
+
+Display these analytics in a knowledge-graph visualization using D3.js or React Force Graph.
+
+Each node represents a grievance, and connections show relationships (like “common keywords” or “department links”).
+
+Example: Clicking “Hostel” → shows all hostel-related grievances as an interactive knowledge graph.
+
+🔹 3. Admin “Send Message” Feature
+
+Add this functionality to the Admin Dashboard.
+
+Each grievance card (or detail view) should have a “Send Message” button that opens a chat modal or drawer.
+
+Inside the chat section:
+
+A text input box for the admin to type a message.
+
+Two buttons below:
+
+Send → sends the message to that specific user (store message data locally or simulate API).
+
+View Chat History → redirects the admin to a full-page chat history view for that specific conversation.
+
+Chat History Page:
+
+Full-width, clean page layout.
+
+Shows complete message history between that user and admin.
+
+Messages should appear as chat bubbles, aligned left/right based on sender.
+
+Include a timestamp and auto-scroll to the latest message.
+
+Maintain a soft, minimal UI (similar to ShadCN chat components).
+
+🔹 4. Admin “Google Drive” Page
+
+Add a new page called Google Drive under the Admin panel sidebar.
+
+Two inputs:
+
+Google Drive folder link
+
+Email address (to grant read access)
+
+One Submit button → clicking it redirects to a Drive Dashboard page.
+
+Google Drive Dashboard:
+
+Mimic the layout of Google Drive with file cards shown in a grid view.
+
+Each card displays:
+
+File icon (PDF, DOC, etc.)
+
+File name
+
+Last modified date.
+
+Add a search bar at the top for filtering.
+
+Clicking a file opens a modal showing a mock preview.
+
+🔹 5. Add Two Static Informational Pages
+
+Hostel Rules & Regulations Page
+
+Simple static page with a title and descriptive rules (dummy content is fine).
+
+Use elegant typography and card layout.
+
+Accessible from both admin and user dashboards.
+
+MAKAUT Exam Details Page
+
+Display mock information about MAKAUT exam schedules, forms, or guidelines.
+
+Use card components for each exam item.
+
+🧩 Technical Notes:
+
+Use ShadCN UI components (Card, Button, Input, etc.).
+
+Maintain Manrope as the font family throughout.
+
+Use Tailwind CSS for layout and responsiveness.
+
+Add smooth page transitions using Framer Motion.
+
+Keep pages modular with reusable components.
+
+Make all routes connected using Next.js routing.

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLocation } from 'wouter';
 import { Upload, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
 
 export default function SubmitGrievance() {
+  const [, setLocation] = useLocation();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     category: '',
@@ -34,16 +36,11 @@ export default function SubmitGrievance() {
 
     toast({
       title: 'Grievance Submitted',
-      description: 'Your grievance has been successfully submitted and will be reviewed soon.',
+      description: 'Redirecting to preview...',
     });
 
-    setFormData({
-      category: '',
-      title: '',
-      description: '',
-      attachment: null,
-    });
     setIsSubmitting(false);
+    setLocation('/user/grievance-preview');
   };
 
   return (

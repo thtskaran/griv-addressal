@@ -1,0 +1,164 @@
+- Start from `/login`
+- Show two cards/buttons:
+  - “Login as User”
+  - “Login as Admin”
+- On click → store role in Recoil → redirect:
+  - User → `/user/dashboard`
+  - Admin → `/admin/dashboard`
+- No real backend.
+- Add Logout option in profile dropdown → redirects to `/login` and clears role.
+
+---
+
+## 👥 ROLE-BASED ACCESS (RBAC)
+
+- User can access only `/user/*` pages.
+- Admin can access only `/admin/*` pages.
+- Protect routes with middleware logic based on Recoil state (role).
+- Unauthorized access redirects to `/login`.
+
+---
+
+## 🧍 USER FEATURES
+
+### Dashboard (`/user/dashboard`)
+- Show grievance table (dummy data):
+  - ID, Title, Category, Status, View button.
+- Search bar to filter grievances.
+- “View” opens modal with grievance details.
+
+### Submit Grievance (`/user/submit-grievance`)
+- Form fields:
+  - Category (Academic, Hostel, Facilities, Admin, Other)
+  - Title (text)
+  - Description (textarea)
+  - Upload proof/image (optional)
+- “Submit” button with smooth loading state.
+- Store data locally (no backend).
+
+### Notifications (`/user/notifications`)
+- Show list of dummy notifications (status updates, admin replies).
+- Each notification card should look modern (use ShadCN Card).
+- Add a red dot to notification bell when unread.
+
+### Profile (`/user/profile`)
+- Show dummy user info (name, email, role).
+- Editable name/photo fields.
+- Save locally (no API).
+
+---
+
+## 🧑‍💼 ADMIN FEATURES
+
+### Dashboard (`/admin/dashboard`)
+- Show table of all grievances (dummy data).
+- Columns: ID, Title, Category, Status, Assigned To, Updated At, Actions.
+- Admin can:
+  - Change status (Submitted → In Progress → Resolved/Rejected)
+  - Add notes
+  - Assign to department (dropdown)
+- Include “View” modal.
+
+### Analytics (`/admin/analytics`)
+- Use Recharts to show:
+  - Pie chart: grievances by category
+  - Bar chart: average resolution time
+  - All data is dummy.
+
+### Chatbot (`/admin/chatbot`)
+- Floating circular chatbot icon (bottom-right).
+- On click → slide-in right panel with chat UI.
+- Persistent across admin pages (global component).
+
+### Profile (`/admin/profile`)
+- Admin details (dummy data).
+- “Logout” redirects to `/login`.
+
+---
+
+## 🔔 NOTIFICATIONS SYSTEM
+
+- Add notification bell icon in header (top-right).
+- Red dot when unread notifications exist.
+- `/user/notifications` and `/admin/dashboard` both show dummy notifications.
+- All notifications are locally stored dummy JSON.
+
+---
+
+## 💅 DESIGN & STYLING
+
+- Use **Glassmorphism + Resilient Design**:
+  - backdrop-blur, soft gradients, subtle shadows.
+  - Rounded corners (2xl), light hover transitions.
+- Font: **Manrope**
+- Palette (3-color family):
+  - Primary: `#3B82F6` (blue-500)
+  - Secondary: `#1E3A8A` (blue-900)
+  - Accent: `#E0F2FE` (blue-100)
+- Header: logo left, profile & notification icons right.
+- Sidebar: smooth hover gradient, active state highlight.
+- Use **Framer Motion** for smooth transitions (fade, slide, scale).
+- Use **Lucide React icons**.
+- Responsive (works on desktop + mobile).
+
+---
+
+## 🧱 UI COMPONENTS (from ShadCN/UI)
+
+Use:
+- Button
+- Card
+- Dialog
+- Input
+- Select
+- Textarea
+- Avatar
+- Dropdown Menu
+- Table
+- Tabs
+- Badge
+- Progress
+- Tooltip
+- Skeleton (for loading)
+
+Make sure `@/components/ui` works via proper **relative imports** if alias breaks.
+
+---
+
+## 🧩 UX ENHANCEMENTS
+
+- Subtle transitions between pages (Framer Motion).
+- Skeletons for loading states.
+- Empty state illustrations (“No grievances yet”).
+- Recoil used for:
+  - Auth role state
+  - Notifications
+  - Grievance data
+
+---
+
+## 📊 DUMMY DATA
+
+Use mock objects for:
+- Grievances
+- Notifications
+- Admin analytics
+
+Store in `/src/lib/data.ts` for easy reuse.
+
+---
+
+## 🚀 OUTPUT REQUIREMENTS
+
+- Must compile successfully (no version conflicts).
+- Use **stable dependency versions only**.
+- Proper Tailwind config with ShadCN presets.
+- Folder aliases (`@/components/ui`, `@/lib`, etc.) should resolve correctly.
+- Start project with `/login` page.
+- Both roles (Admin/User) must work independently with dummy data and navigation.
+
+---
+
+## ✨ END OF PROMPT
+Generate the full codebase, folder structure, and ShadCN integration accordingly. strat creating averything from scratch alsoAdd a floating chatbot icon (bottom-right) that should be visible only for the admin role on all admin pages.
+When the admin clicks the icon, it should open a chat window component — a small pop-up card that slides up smoothly from the bottom-right.The chat component should include:A header that says "Admin Chatbot"A scrollable message area (can be empty for now or with dummy messages)A text input box and send button at the bottom (UI only, no backend logic yet).Requirements:Make the chat icon and popup responsive and clean.Use smooth transitions (like framer-motion or CSS transitions).Use shadcn/ui compo...
