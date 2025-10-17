@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
-import { Eye, MessageSquare, Star, Send } from 'lucide-react';
+import { Eye, MessageSquare, Star, Send, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import apiClient from '@/lib/apiClient';
 import {
   Select,
   SelectContent,
@@ -28,13 +29,93 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { mockGrievances, type Grievance, type GrievanceStatus } from '@/lib/data';
 import { useToast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
 
+// Type definition for grievance data from the API
+type Grievance = {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  category: string;
+  status: GrievanceStatus;
+  submittedAt: Date;
+  updatedAt: Date;
+  adminReply: string | null;
+  rating: number | null;
+  feedback: string | null;
+  assignedTo: string | null;
+};
+
+// Type for the status values used in selects and state
+type GrievanceStatus = 'Submitted' | 'In Progress' | 'Resolved' | 'Rejected';
+
+const mockGrievances: Grievance[] = [
+  {
+    id: 'G-001',
+    userId: 'user123',
+    title: 'Wi-Fi not working in Hostel B',
+    description: 'The Wi-Fi has been down for 3 days in the entire B-Block. We are unable to attend online classes or complete assignments.',
+    category: 'IT Services',
+    status: 'In Progress',
+    submittedAt: new Date('2025-10-15T09:00:00Z'),
+    updatedAt: new Date('2025-10-16T11:20:00Z'),
+    adminReply: 'Our IT team is aware of the issue and is working on a fix. Expected resolution time is 24 hours.',
+    rating: null,
+    feedback: null,
+    assignedTo: 'IT Department',
+  },
+  {
+    id: 'G-002',
+    userId: 'user456',
+    title: 'Leaky faucet in washroom',
+    description: 'The faucet on the 2nd floor, left-side washroom has been leaking continuously for a week.',
+    category: 'Maintenance',
+    status: 'Resolved',
+    submittedAt: new Date('2025-10-12T14:30:00Z'),
+    updatedAt: new Date('2025-10-14T17:00:00Z'),
+    adminReply: 'The maintenance team has fixed the faucet.',
+    rating: 5,
+    feedback: 'Excellent and quick service!',
+    assignedTo: 'Maintenance',
+  },
+    {
+    id: 'G-003',
+    userId: 'user789',
+    title: 'Incorrect library book fine',
+    description: 'I was charged a late fine for a book I returned on time. Please check the records.',
+    category: 'Library',
+    status: 'Submitted',
+    submittedAt: new Date('2025-10-17T10:00:00Z'),
+    updatedAt: new Date('2025-10-17T10:00:00Z'),
+    adminReply: null,
+    rating: null,
+    feedback: null,
+    assignedTo: null,
+  },
+   {
+    id: 'G-004',
+    userId: 'user101',
+    title: 'Food quality in mess',
+    description: 'The food quality has deteriorated significantly over the past month.',
+    category: 'Food Services',
+    status: 'Resolved',
+    submittedAt: new Date('2025-09-20T19:00:00Z'),
+    updatedAt: new Date('2025-09-25T12:00:00Z'),
+    adminReply: 'We have spoken with the caterers and implemented stricter quality checks.',
+    rating: 3,
+    feedback: 'It is slightly better now, but can still be improved.',
+    assignedTo: 'Food Services',
+  },
+];
+
+
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
-  const [grievances, setGrievances] = useState(mockGrievances);
+  const [grievances, setGrievances] = useState<Grievance[]>(mockGrievances);
+  // const [isLoading, setIsLoading] = useState(true);
+  // const [error, setError] = useState<string | null>(null);
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
@@ -44,6 +125,32 @@ export default function AdminDashboard() {
   const [filterStatus, setFilterStatus] = useState('all');
   const { toast } = useToast();
 
+  /*
+  useEffect(() => {
+    const fetchGrievances = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch('/grievances');
+        if (!response.ok) {
+          throw new Error('Failed to fetch grievances');
+        }
+        const data = await response.json();
+        setGrievances(data);
+      } catch (err) {
+         if (err instanceof Error) {
+            setError(err.message);
+        } else {
+            setError('An unknown error occurred.');
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchGrievances();
+  }, []);
+  */
+
   const handleStatusChange = (grievanceId: string, newStatus: GrievanceStatus) => {
     setGrievances(
       grievances.map((g) => (g.id === grievanceId ? { ...g, status: newStatus, updatedAt: new Date() } : g))
@@ -51,6 +158,16 @@ export default function AdminDashboard() {
     toast({
       title: 'Status Updated',
       description: `Grievance status changed to ${newStatus}`,
+    });
+  };
+
+  const handleAssign = (grievanceId: string, department: string) => {
+    setGrievances(
+      grievances.map((g) => (g.id === grievanceId ? { ...g, assignedTo: department, updatedAt: new Date() } : g))
+    );
+     toast({
+      title: 'Grievance Assigned',
+      description: `Assigned to ${department}`,
     });
   };
 
@@ -90,12 +207,6 @@ export default function AdminDashboard() {
   const handleViewChatHistory = () => {
     setMessageDialogOpen(false);
     setLocation('/admin/chat-history');
-  };
-
-  const handleAssign = (grievanceId: string, department: string) => {
-    setGrievances(
-      grievances.map((g) => (g.id === grievanceId ? { ...g, assignedTo: department, updatedAt: new Date() } : g))
-    );
   };
 
   const getStatusColor = (status: string) => {
@@ -311,7 +422,7 @@ export default function AdminDashboard() {
         </Card>
       </motion.div>
 
-      <Dialog open={!!selectedGrievance && !replyDialogOpen} onOpenChange={() => setSelectedGrievance(null)}>
+      <Dialog open={!!selectedGrievance && !replyDialogOpen && !messageDialogOpen} onOpenChange={() => setSelectedGrievance(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-2xl">{selectedGrievance?.title}</DialogTitle>
@@ -412,3 +523,4 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
