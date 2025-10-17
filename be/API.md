@@ -12,6 +12,7 @@ This document outlines the REST endpoints exposed by the Flask backend, includin
   "status": "ok"
 }
 ```
+- `tags` is still accepted as an alias for `issue_tags` when interacting with older clients.
 
 ## Student Flows
 
@@ -22,7 +23,9 @@ This document outlines the REST endpoints exposed by the Flask backend, includin
 {
   "title": "Library AC not working",
   "description": "The AC has been off for a week in the reading hall.",
-  "tags": ["library", "ac_issue"],
+  "issue_tags": ["library", "ac_issue"],
+  "cluster": "library > ac_issue",
+  "cluster_tags": ["library > ac_issue"],
   "documents": [
     {
       "filename": "incident.jpg",
@@ -43,9 +46,15 @@ This document outlines the REST endpoints exposed by the Flask backend, includin
     "status": "NEW",
     "assigned_to": "OTHERS",
     "tags": ["library", "ac_issue"],
+    "issue_tags": ["library", "ac_issue"],
+    "cluster_tags": ["library > ac_issue"],
     "s3_doc_urls": ["s3://student-grievances/grievances/123/incident.jpg"],
-    "cluster": null,
+    "cluster": "library > ac_issue",
     "drop_reason": null,
+    "tag_groups": {
+      "issue": ["library", "ac_issue"],
+      "cluster": ["library > ac_issue"]
+    },
     "created_at": "2025-04-01T12:33:11.202166",
     "updated_at": "2025-04-01T12:33:11.202166"
   }
@@ -66,9 +75,15 @@ This document outlines the REST endpoints exposed by the Flask backend, includin
       "status": "IN_PROGRESS",
       "assigned_to": "LIBRARY",
       "tags": ["library", "ac_issue"],
+      "issue_tags": ["library", "ac_issue"],
+      "cluster_tags": ["infrastructure"],
       "s3_doc_urls": [],
       "cluster": "infrastructure",
       "drop_reason": null,
+      "tag_groups": {
+        "issue": ["library", "ac_issue"],
+        "cluster": ["infrastructure"]
+      },
       "created_at": "2025-04-01T12:33:11.202166",
       "updated_at": "2025-04-02T09:15:05.982310"
     }
@@ -89,9 +104,15 @@ This document outlines the REST endpoints exposed by the Flask backend, includin
     "status": "IN_PROGRESS",
     "assigned_to": "LIBRARY",
     "tags": ["library", "ac_issue"],
+    "issue_tags": ["library", "ac_issue"],
+    "cluster_tags": ["infrastructure"],
     "s3_doc_urls": [],
     "cluster": "infrastructure",
     "drop_reason": null,
+    "tag_groups": {
+      "issue": ["library", "ac_issue"],
+      "cluster": ["infrastructure"]
+    },
     "created_at": "2025-04-01T12:33:11.202166",
     "updated_at": "2025-04-02T09:05:45.114901"
   },
@@ -143,8 +164,14 @@ This document outlines the REST endpoints exposed by the Flask backend, includin
       "status": "IN_PROGRESS",
       "assigned_to": "LIBRARY",
       "tags": ["library", "ac_issue"],
+      "issue_tags": ["library", "ac_issue"],
+      "cluster_tags": ["infrastructure"],
       "cluster": "infrastructure",
       "drop_reason": null,
+      "tag_groups": {
+        "issue": ["library", "ac_issue"],
+        "cluster": ["infrastructure"]
+      },
       "created_at": "2025-04-01T12:33:11.202166",
       "updated_at": "2025-04-02T09:05:45.114901"
     }
@@ -153,14 +180,15 @@ This document outlines the REST endpoints exposed by the Flask backend, includin
 ```
 
 ### `PATCH /admin/grievances/<grievance_id>`
-- **Brief:** Update status, assignee, tags, cluster, or drop reason.
+- **Brief:** Update status, assignee, issue tags, cluster tags, cluster, or drop reason.
 - **Sample Request**
 ```json
 {
   "status": "IN_PROGRESS",
   "assigned_to": "LIBRARY",
-  "tags": ["library", "hvac"],
-  "cluster": "infrastructure"
+  "issue_tags": ["library", "hvac"],
+  "cluster": "infrastructure",
+  "cluster_tags": ["infrastructure"]
 }
 ```
 - **Sample Response**
@@ -173,8 +201,14 @@ This document outlines the REST endpoints exposed by the Flask backend, includin
     "status": "IN_PROGRESS",
     "assigned_to": "LIBRARY",
     "tags": ["library", "hvac"],
+    "issue_tags": ["library", "hvac"],
+    "cluster_tags": ["infrastructure"],
     "cluster": "infrastructure",
     "drop_reason": null,
+    "tag_groups": {
+      "issue": ["library", "hvac"],
+      "cluster": ["infrastructure"]
+    },
     "created_at": "2025-04-01T12:33:11.202166",
     "updated_at": "2025-04-02T09:05:45.114901"
   }
@@ -204,7 +238,7 @@ This document outlines the REST endpoints exposed by the Flask backend, includin
 ```
 
 ### `POST /admin/gdrive`
-- **Brief:** Register a Google Drive folder for knowledge base ingestion.
+- **Brief:** Register a Google Drive folder for knowledge base ingestion and kick off a 5-minute background poller that syncs changes into MongoDB.
 - **Sample Request**
 ```json
 {
@@ -216,7 +250,25 @@ This document outlines the REST endpoints exposed by the Flask backend, includin
 {
   "folder_id": "1AxVrJ2fd...",
   "request_id": "c2ac5cead9b4a20b6b8fb7d2e056f5cf7fd2e7d822f10bfca319b7145f5f3bf4",
-  "status": "QUEUED"
+  "status": "POLLING",
+  "start_page_token": "1706",
+  "polling_interval_seconds": 300,
+  "next_poll_in_seconds": 0
+}
+```
+
+### `GET /admin/gdrive/reindex`
+- **Brief:** Force a full rescan of the registered Google Drive folder, replace the stored knowledge-base chunks in MongoDB, and restart the poller with the latest change token. Returns `400` if no folder is registered.
+- **Sample Response**
+```json
+{
+  "status": "REINDEXED",
+  "folder_id": "1AxVrJ2fd...",
+  "chunks_discovered": 42,
+  "chunks_upserted": 42,
+  "chunks_deleted": 40,
+  "next_change_token": "1708",
+  "reindexed_at": "2025-04-02T14:10:31.919112"
 }
 ```
 

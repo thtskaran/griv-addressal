@@ -14,6 +14,8 @@ from sqlalchemy import (
     Text,
     create_engine,
     event,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import (
     declarative_base,
@@ -141,6 +143,7 @@ class Grievance(Base, TimestampMixin):
     assigned_to = Column(Enum(Department), default=Department.OTHERS, nullable=False)
     tags = Column(list_column_type(), default=list)
     s3_doc_urls = Column(list_column_type(), default=list)
+    cluster_tags = Column(list_column_type(), default=list)
     cluster = Column(String(120), nullable=True)
     drop_reason = Column(Text, nullable=True)
 
@@ -195,7 +198,31 @@ def init_db(drop_existing: bool = False) -> None:
     if drop_existing:
         Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    _ensure_cluster_tags_column()
     seed_default_entities()
+
+
+def _ensure_cluster_tags_column() -> None:
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("grievances")}
+    if "cluster_tags" in columns:
+        return
+
+    with engine.begin() as connection:
+        if IS_POSTGRES:
+            connection.execute(
+                text("ALTER TABLE grievances ADD COLUMN cluster_tags TEXT[] DEFAULT ARRAY[]::TEXT[]")
+            )
+            connection.execute(
+                text("UPDATE grievances SET cluster_tags = ARRAY[]::TEXT[] WHERE cluster_tags IS NULL")
+            )
+        else:
+            connection.execute(
+                text("ALTER TABLE grievances ADD COLUMN cluster_tags TEXT DEFAULT '[]'")
+            )
+            connection.execute(
+                text("UPDATE grievances SET cluster_tags = '[]' WHERE cluster_tags IS NULL")
+            )
 
 
 def get_grievance(session, grievance_id: int) -> Optional[Grievance]:

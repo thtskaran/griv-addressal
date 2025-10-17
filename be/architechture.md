@@ -48,11 +48,12 @@ This backend system serves as the foundation for a **Student Grievance Managemen
 - `title`, `description`
 - `status` (enum: NEW, IN_PROGRESS, SOLVED, DROPPED)
 - `assigned_to` (enum: HOSTEL, MESS, FACULTY, ACADEMICS, LIBRARY, ETC)
-- `tags` (array: ["hostel","ac_issue"])
+- `issue_tags` (stored in column `tags`; array like ["hostel","ac_issue"])
+- `cluster_tags` (array for grouping related grievances, e.g., ["library > ac_issue"])
 - `s3_doc_urls` (array)
 - `created_at`
 - `updated_at`
-- `cluster` (string, optional, for hierarchical tags)
+- `cluster` (string, optional, primary cluster label; defaults to first `cluster_tags` entry)
 
 **Admin**
 - `id`, `name`, `email`, `gd_service_account_json` (for gdrive access)
@@ -63,7 +64,7 @@ This backend system serves as the foundation for a **Student Grievance Managemen
 - `_id` (matches SQL id)
 - `embedding` (vector)
 - `grievance_id` (reference)
-- `tags`, `cluster`
+- `tags` / `issue_tags`, `cluster`, `cluster_tags`
 - `meta_info`
 
 **Chat Conversation**
@@ -104,7 +105,10 @@ This backend system serves as the foundation for a **Student Grievance Managemen
 ### 5.1 Grievance Embedding & Tagging
 
 - Upon submission, each grievance's **description** is converted to an embedding with OpenAI API and inserted into MongoDB.
-- An AI-based tagging/clustering process (using OpenAI LLM APIs) analyzes the content, suggests hierarchical tags (e.g., "library" → "ac_issue"), and attaches them to both PostgreSQL and MongoDB records.
+- An AI-based tagging/clustering process (using OpenAI LLM APIs) analyzes the content, populating two parallel metadata sets:
+  - `issue_tags` (formerly `tags`) capture categorical labels such as departments or issue types.
+  - `cluster_tags` capture thematic or entity-based groupings (e.g., a specific book or room); the first entry is mirrored into the SQL `cluster` column for quick lookups.
+- Both tag families are persisted in PostgreSQL and MongoDB for downstream analytics and semantic filtering.
 
 ### 5.2 Knowledge Base Integration (GDrive)
 
@@ -113,13 +117,14 @@ This backend system serves as the foundation for a **Student Grievance Managemen
 - During grievance submission, the system queries the knowledge base embeddings for relevant sections to suggest actionable info (e.g., policies or recent notices).
 - Students can accept a KB-suggested resolution (and drop the grievance) or continue the submission.
 - Each indexed document is split into semantic chunks (approx. 400–600 tokens) with deterministic chunk IDs so updates can be diffed without reprocessing the whole corpus.
-- The admin’s service-account link stores the current `start_page_id` (Google Drive start page token). A scheduled worker calls `changes().list(pageToken=start_page_id)` to detect additions, updates, or deletions:
-  1. **Add/Update:** fetch the file, regenerate affected chunks, update embeddings in MongoDB, and refresh the `start_page_id`.
+- The admin’s service-account link stores the current `start_page_token` from Google Drive. A scheduled worker calls `changes().list(pageToken=start_page_token)` to detect additions, updates, or deletions:
+  1. **Add/Update:** fetch the file, regenerate affected chunks, update embeddings in MongoDB, and refresh the `start_page_token`.
   2. **Delete:** remove associated chunks and embeddings, marking suggestions referencing them as inactive.
-- A background poller runs every 120 seconds using the stored `start_page_id`; it calls `changes().list(pageToken=start_page_id)` to detect additions, updates, or deletions, then upserts the affected chunks into MongoDB and refreshes the token.
+- A background poller runs every five minutes (configurable via `GDRIVE_POLL_INTERVAL`, default `300` seconds) using the stored `start_page_token`; it calls `changes().list(pageToken=start_page_token)` to detect additions, updates, or deletions, then upserts the affected chunks into MongoDB and refreshes the token.
 - Chunk metadata (doc ID, chunk ID, checksum, last indexed at) is persisted so only modified segments are re-embedded.
-- The polling cadence is configurable but defaults to two minutes; each cycle batches Drive deltas before dispatching chunk embedding jobs.
+- The cadence is managed by an in-process background thread that is triggered when an admin registers a Drive folder; each cycle batches Drive deltas before dispatching chunk embedding jobs.
 - Suggestion requests query the vector store with hybrid similarity + metadata filters (e.g., department) before ranking results for the LLM summarizer.
+- The poller authenticates with Google Drive using the service account and streams changes via the Drive `changes.list` API, ingesting new files, updates, and deletions in near real time.
 
 ### 5.3 AI Chatbot (Admin)
 
@@ -153,7 +158,7 @@ This backend system serves as the foundation for a **Student Grievance Managemen
    - The UI calls `POST /ai/suggestions/preview`; the backend retrieves relevant chunks, formats them with the LLM, and returns actionable guidance plus similar historical grievances.
    - If the student accepts a suggestion, the client calls `POST /ai/suggestions/confirm`, optionally auto-closing the grievance with a reference to the KB excerpt.
 5. **Knowledge base upkeep:**  
-   - An automated poller wakes every two minutes, iterates Drive changes with the current `start_page_id`, and upserts modified chunks into MongoDB so future suggestions reflect fresh content.
+   - An automated poller wakes every few minutes, iterates Drive changes with the current `start_page_token`, and upserts modified chunks into MongoDB so future suggestions reflect fresh content.
 
 ***
 
@@ -192,6 +197,9 @@ Request (multipart for document upload):
 {
   "title": "Library AC not working",
   "description": "The air conditioning in the central library is broken since last week.",
+  "issue_tags": ["library", "ac_issue"],
+  "cluster": "library > ac_issue",
+  "cluster_tags": ["library > ac_issue"],
   "docs": ["file1.pdf", "file2.jpg"]
 }
 ```
@@ -205,11 +213,17 @@ Response:
   "status": "NEW",
   "assigned_to": null,
   "tags": ["library", "ac_issue"],
+  "issue_tags": ["library", "ac_issue"],
+  "cluster_tags": ["library > ac_issue"],
   "cluster": "library > ac_issue",
   "s3_doc_urls": [
     "https://s3.amazonaws.com/bucket/grievances/123/file1.pdf",
     "https://s3.amazonaws.com/bucket/grievances/123/file2.jpg"
   ],
+  "tag_groups": {
+    "issue": ["library", "ac_issue"],
+    "cluster": ["library > ac_issue"]
+  },
   "created_at": "2025-10-16T21:54:32Z"
 }
 ```
@@ -233,7 +247,13 @@ Response:
     "status": "IN_PROGRESS",
     "assigned_to": "LIBRARY",
     "tags": ["library", "ac_issue"],
+    "issue_tags": ["library", "ac_issue"],
+    "cluster_tags": ["library > ac_issue"],
     "cluster": "library > ac_issue",
+    "tag_groups": {
+      "issue": ["library", "ac_issue"],
+      "cluster": ["library > ac_issue"]
+    },
     "created_at": "2025-10-16T21:54:32Z"
   },
   {
@@ -242,7 +262,13 @@ Response:
     "status": "SOLVED",
     "assigned_to": "MESS",
     "tags": ["mess", "hygiene"],
+    "issue_tags": ["mess", "hygiene"],
+    "cluster_tags": ["mess > hygiene"],
     "cluster": "mess > hygiene",
+    "tag_groups": {
+      "issue": ["mess", "hygiene"],
+      "cluster": ["mess > hygiene"]
+    },
     "created_at": "2025-10-01T17:44:11Z"
   }
 ]
@@ -268,7 +294,13 @@ Response:
   "status": "IN_PROGRESS",
   "assigned_to": "LIBRARY",
   "tags": ["library", "ac_issue"],
+  "issue_tags": ["library", "ac_issue"],
+  "cluster_tags": ["library > ac_issue"],
   "cluster": "library > ac_issue",
+  "tag_groups": {
+    "issue": ["library", "ac_issue"],
+    "cluster": ["library > ac_issue"]
+  },
   "s3_doc_urls": [
     "https://s3.amazonaws.com/bucket/grievances/123/file1.pdf",
     "https://s3.amazonaws.com/bucket/grievances/123/file2.jpg"
@@ -336,6 +368,13 @@ Response:
     "status": "NEW",
     "assigned_to": "LIBRARY",
     "tags": ["library", "ac_issue"],
+    "issue_tags": ["library", "ac_issue"],
+    "cluster_tags": ["library > ac_issue"],
+    "cluster": "library > ac_issue",
+    "tag_groups": {
+      "issue": ["library", "ac_issue"],
+      "cluster": ["library > ac_issue"]
+    },
     "created_at": "2025-10-16T21:54:32Z"
   }
 ]
@@ -367,8 +406,9 @@ Response:
 Alternate: Tagging & Cluster Update
 ```json
 {
-  "tags": ["library", "ac_issue"],
-  "cluster": "library > ac_issue"
+  "issue_tags": ["library", "ac_issue"],
+  "cluster": "library > ac_issue",
+  "cluster_tags": ["library > ac_issue"]
 }
 ```
 Response:
@@ -376,7 +416,13 @@ Response:
 {
   "id": 123,
   "tags": ["library", "ac_issue"],
+  "issue_tags": ["library", "ac_issue"],
+  "cluster_tags": ["library > ac_issue"],
   "cluster": "library > ac_issue",
+  "tag_groups": {
+    "issue": ["library", "ac_issue"],
+    "cluster": ["library > ac_issue"]
+  },
   "updated_at": "2025-10-17T12:06:32Z"
 }
 ```
@@ -566,9 +612,11 @@ Response:
 ```json
 {
   "folder_id": "1AxVrJ2fd...",
-  "polling_interval_seconds": 120,
+  "status": "POLLING",
+  "polling_interval_seconds": 300,
+  "next_poll_in_seconds": 0,
   "last_poll_completed_at": "2025-10-17T12:30:11Z",
-  "start_page_id": "gdrive_start_token_1706",
+  "start_page_token": "1706",
   "changes_processed": {
     "added_or_updated_chunks": 17,
     "deleted_chunks": 2
@@ -626,4 +674,3 @@ or
 - **Chat operations:** Chat stored/retrieved from MongoDB, linked by `grievance_id`.
 - **AI suggestion flow:** Involves previewing potential KB suggestions during grievance drafting, with an option to auto-resolve grievances based on accepted suggestions.
 - **Knowledge base maintenance:** Automated syncing of Google Drive changes ensures the backend's knowledge base is up-to-date, leveraging Drive's incremental change detection.
-

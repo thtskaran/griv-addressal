@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 from flask import Flask, jsonify, request
 
@@ -18,11 +18,28 @@ from utils import (
     fetch_chat,
     fetch_cluster_analytics,
     generate_ai_suggestions,
+    get_gdrive_poller,
     persist_embedding,
+    reindex_gdrive_folder,
     schedule_gdrive_ingestion,
     summarize_for_admin,
     upload_documents_to_s3,
 )
+
+
+def first_present(payload: Dict[str, Any], keys: Iterable[str]):
+    for key in keys:
+        if key in payload and payload[key] is not None:
+            return payload[key]
+    return None
+
+
+def ensure_list(value: Any):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
 
 
 def create_app() -> Flask:
@@ -69,6 +86,12 @@ def create_app() -> Flask:
         if assigned is None:
             return error_response("Invalid assigned_to value", 400)
 
+        issue_tags = ensure_list(first_present(payload, ("category_tags", "issue_tags", "tags")))
+        cluster_label = payload.get("cluster")
+        cluster_tags = ensure_list(first_present(payload, ("cluster_tags", "clusters")))
+        if not cluster_tags and cluster_label:
+            cluster_tags = [cluster_label]
+
         with session_scope() as session:
             student = get_or_create_default_student(session)
             grievance = Grievance(
@@ -77,8 +100,9 @@ def create_app() -> Flask:
                 description=description,
                 status=status,
                 assigned_to=assigned,
-                tags=payload.get("tags", []),
-                cluster=payload.get("cluster"),
+                tags=issue_tags,
+                cluster=cluster_label,
+                cluster_tags=cluster_tags,
             )
             session.add(grievance)
             session.flush()
@@ -98,7 +122,9 @@ def create_app() -> Flask:
                     embedding,
                     {
                         "tags": grievance.tags,
+                        "issue_tags": grievance.tags,
                         "cluster": grievance.cluster,
+                        "cluster_tags": grievance.cluster_tags or [],
                         "student_id": grievance.student_id,
                     },
                 )
@@ -185,9 +211,18 @@ def create_app() -> Flask:
     @app.route("/admin/grievances/<int:grievance_id>", methods=["PATCH"])
     def admin_update_grievance(grievance_id: int):
         payload = request.get_json(force=True)
-        allowed_fields = {"status", "assigned_to", "tags", "cluster", "drop_reason"}
-        sanitized = {key: payload[key] for key in payload.keys() & allowed_fields}
-        if not sanitized:
+        allowed_fields = {
+            "status",
+            "assigned_to",
+            "tags",
+            "issue_tags",
+            "category_tags",
+            "cluster",
+            "cluster_tags",
+            "clusters",
+            "drop_reason",
+        }
+        if not any(key in payload for key in allowed_fields):
             return error_response("No updatable fields provided", 400)
 
         with session_scope() as session:
@@ -195,26 +230,41 @@ def create_app() -> Flask:
             if not grievance:
                 return error_response("Grievance not found", 404)
 
-            if "status" in sanitized:
-                status = parse_status(sanitized["status"])
+            if "status" in payload:
+                status = parse_status(payload["status"])
                 if status is None:
                     return error_response("Invalid status value", 400)
                 grievance.status = status
 
-            if "assigned_to" in sanitized:
-                dept = parse_department(sanitized["assigned_to"])
+            if "assigned_to" in payload:
+                dept = parse_department(payload["assigned_to"])
                 if dept is None:
                     return error_response("Invalid assigned_to value", 400)
                 grievance.assigned_to = dept
 
-            if "tags" in sanitized:
-                grievance.tags = sanitized["tags"]
+            tags_value = first_present(payload, ("category_tags", "issue_tags", "tags"))
+            if tags_value is not None:
+                grievance.tags = ensure_list(tags_value)
 
-            if "cluster" in sanitized:
-                grievance.cluster = sanitized["cluster"]
+            cluster_key_present = "cluster" in payload
+            cluster_label_value = payload.get("cluster") if cluster_key_present else None
+            cluster_tags_value = first_present(payload, ("cluster_tags", "clusters"))
+            cluster_tags_list = None
+            if cluster_tags_value is not None:
+                cluster_tags_list = ensure_list(cluster_tags_value)
+                grievance.cluster_tags = cluster_tags_list
 
-            if "drop_reason" in sanitized:
-                grievance.drop_reason = sanitized["drop_reason"]
+            if cluster_key_present:
+                grievance.cluster = cluster_label_value
+                if cluster_label_value and cluster_tags_value is None:
+                    grievance.cluster_tags = [cluster_label_value]
+                if cluster_label_value is None and cluster_tags_value is None:
+                    grievance.cluster_tags = []
+            elif cluster_tags_list:
+                grievance.cluster = cluster_tags_list[0]
+
+            if "drop_reason" in payload:
+                grievance.drop_reason = payload["drop_reason"]
 
             session.add(grievance)
             return jsonify({"grievance": serialize_grievance(grievance)})
@@ -239,9 +289,42 @@ def create_app() -> Flask:
             return error_response("folder_id is required", 400)
         try:
             response = schedule_gdrive_ingestion(folder_id)
+            status = response.get("status")
+            next_poll = response.get("next_poll_in_seconds")
+            interval = response.get("polling_interval_seconds")
+            if status == "POLLING" and (next_poll is None or next_poll <= 0):
+                normalized_poll = interval or 300
+                response["next_poll_in_seconds"] = normalized_poll
+                response.setdefault(
+                    "note",
+                    f"next_poll_in_seconds normalized to {normalized_poll}.",
+                )
             return jsonify(response)
         except ValueError as exc:
             return error_response(str(exc), 400)
+
+    @app.route("/admin/gdrive/reindex", methods=["GET"])
+    def admin_reindex_gdrive():
+        poller = get_gdrive_poller()
+        state = poller.snapshot_state()
+        folder_id = state.get("folder_id")
+        if not folder_id:
+            return error_response("No Google Drive folder configured for ingestion", 400)
+
+        previous_token = state.get("change_token")
+        poller.stop()
+        try:
+            result = reindex_gdrive_folder(folder_id)
+            next_token = result.get("next_change_token") or previous_token
+        except ValueError as exc:
+            poller.start(folder_id, change_token=previous_token)
+            return error_response(str(exc), 400)
+        except Exception as exc:
+            poller.start(folder_id, change_token=previous_token)
+            return error_response(str(exc), 500)
+
+        poller.start(folder_id, change_token=next_token)
+        return jsonify({"status": "REINDEXED", **result})
 
     @app.route("/admin/analytics/clusters", methods=["GET"])
     def admin_cluster_analytics():
@@ -323,6 +406,8 @@ def serialize_related_grievance(grievance: Grievance) -> Dict[str, Any]:
         "id": grievance.id,
         "title": grievance.title,
         "status": grievance.status.value if grievance.status else None,
+        "cluster": grievance.cluster,
+        "cluster_tags": grievance.cluster_tags or [],
     }
 
 
@@ -354,11 +439,17 @@ def serialize_grievance(grievance: Grievance) -> Dict[str, Any]:
         "status": grievance.status.value if grievance.status else None,
         "assigned_to": grievance.assigned_to.value if grievance.assigned_to else None,
         "tags": grievance.tags or [],
+        "issue_tags": grievance.tags or [],
+        "cluster_tags": grievance.cluster_tags or [],
         "s3_doc_urls": grievance.s3_doc_urls or [],
         "cluster": grievance.cluster,
         "drop_reason": grievance.drop_reason,
         "created_at": grievance.created_at.isoformat() if grievance.created_at else None,
         "updated_at": grievance.updated_at.isoformat() if grievance.updated_at else None,
+        "tag_groups": {
+            "issue": grievance.tags or [],
+            "cluster": grievance.cluster_tags or [],
+        },
     }
 
 

@@ -40,6 +40,7 @@ class MongoSettings:
     chat_collection: str
     embedding_collection: str
     analytics_collection: str
+    kb_collection: str
 
 
 @dataclass(frozen=True)
@@ -107,6 +108,7 @@ def load_settings(env_file: str = ".env") -> ApplicationSettings:
         analytics_collection=os.getenv(
             "MONGODB_ANALYTICS_COLLECTION", "cluster_analytics"
         ),
+        kb_collection=os.getenv("MONGODB_KB_COLLECTION", "knowledge_base_chunks"),
     )
 
     openai = OpenAISettings(
