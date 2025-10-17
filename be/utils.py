@@ -48,6 +48,13 @@ try:
 except ImportError:  # pragma: no cover
     PdfReader = None
 
+try:
+    import numpy as np  # type: ignore
+    from sklearn.cluster import DBSCAN  # type: ignore
+except ImportError:  # pragma: no cover
+    np = None
+    DBSCAN = None
+
 logger = logging.getLogger("grievance.backend")
 
 
@@ -786,6 +793,245 @@ def get_gdrive_poller() -> KnowledgeBaseChangePoller:
     return _GDRIVE_POLLER
 
 
+class GrievanceClusteringEngine:
+    """
+    Background engine that periodically clusters grievances based on embedding similarity.
+    Uses DBSCAN clustering algorithm with cosine similarity.
+    """
+
+    def __init__(self, interval_seconds: int = 30):
+        self.interval = max(10, int(interval_seconds))
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._last_cluster_time: Optional[datetime] = None
+
+    def start(self) -> None:
+        """Start the clustering background thread."""
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                logger.info("Clustering engine already running")
+                return
+
+            self._stop_event.clear()
+            self._thread = threading.Thread(
+                target=self._run, name="grievance-clustering-engine", daemon=True
+            )
+            self._thread.start()
+            logger.info(
+                "Started Grievance Clustering Engine (interval=%ss)", self.interval
+            )
+
+    def stop(self) -> None:
+        """Stop the clustering background thread."""
+        with self._lock:
+            if not self._thread:
+                return
+            self._stop_event.set()
+            thread = self._thread
+            self._thread = None
+        thread.join(timeout=2.0)
+        logger.info("Stopped Grievance Clustering Engine")
+
+    def trigger_now(self) -> None:
+        """Trigger immediate clustering without waiting for next interval."""
+        logger.info("Manual clustering trigger requested")
+        self._perform_clustering()
+
+    def get_last_cluster_time(self) -> Optional[datetime]:
+        """Get timestamp of last successful clustering operation."""
+        with self._lock:
+            return self._last_cluster_time
+
+    def _run(self) -> None:
+        """Background thread main loop."""
+        logger.info("Clustering engine background thread started")
+        while not self._stop_event.is_set():
+            try:
+                self._perform_clustering()
+            except Exception as exc:
+                logger.error("Clustering operation failed: %s", exc, exc_info=True)
+
+            # Wait for next cycle
+            self._stop_event.wait(self.interval)
+
+    def _perform_clustering(self) -> None:
+        """Execute clustering algorithm on all grievance embeddings."""
+        if np is None or DBSCAN is None:
+            logger.warning("numpy or sklearn not available, clustering disabled")
+            return
+
+        try:
+            logger.debug("Starting clustering operation...")
+            repo = MongoRepository()
+            
+            # Fetch all grievance embeddings from MongoDB
+            all_embeddings = list(repo.embeddings.find({"embedding": {"$exists": True}}))
+            
+            if len(all_embeddings) < 2:
+                logger.debug("Not enough grievances to cluster (need at least 2, got %d)", len(all_embeddings))
+                return
+
+            logger.info("Clustering %d grievances...", len(all_embeddings))
+            
+            # Prepare data for clustering
+            grievance_ids = []
+            embeddings_matrix = []
+            meta_infos = []
+            
+            for record in all_embeddings:
+                grievance_ids.append(record.get("grievance_id"))
+                embeddings_matrix.append(record.get("embedding"))
+                meta_infos.append(record.get("meta_info", {}))
+
+            # Convert to numpy array
+            X = np.array(embeddings_matrix)
+            
+            # Normalize embeddings for cosine similarity
+            # Cosine distance = 1 - cosine_similarity
+            from sklearn.preprocessing import normalize
+            X_normalized = normalize(X, norm='l2')
+            
+            # Use DBSCAN with cosine metric
+            # eps: maximum distance between two samples to be considered in same cluster
+            # min_samples: minimum number of samples in a neighborhood
+            eps = 0.3  # Adjust this value to control cluster tightness (0.2-0.4 works well)
+            min_samples = 2  # Minimum 2 grievances to form a cluster
+            
+            clustering = DBSCAN(eps=eps, min_samples=min_samples, metric='cosine')
+            cluster_labels = clustering.fit_predict(X_normalized)
+            
+            logger.info("DBSCAN clustering completed: found %d unique clusters (including noise)", 
+                       len(set(cluster_labels)))
+            
+            # Update each grievance with its cluster assignment
+            cluster_assignments = {}
+            for i, grievance_id in enumerate(grievance_ids):
+                cluster_id = int(cluster_labels[i])  # Convert numpy.int64 to Python int
+                if cluster_id == -1:
+                    # Noise point (not belonging to any cluster)
+                    cluster_label = f"unclustered_{grievance_id}"
+                else:
+                    cluster_label = f"cluster_{cluster_id}"
+                
+                cluster_assignments[grievance_id] = {
+                    "cluster_id": cluster_id,
+                    "cluster_label": cluster_label,
+                    "is_noise": cluster_id == -1
+                }
+            
+            # Update PostgreSQL grievances with cluster labels
+            from db import session_scope, Grievance
+            with session_scope() as session:
+                for grievance_id, assignment in cluster_assignments.items():
+                    grievance = session.query(Grievance).filter(Grievance.id == grievance_id).first()
+                    if grievance:
+                        cluster_label = assignment["cluster_label"]
+                        grievance.cluster = cluster_label
+                        # Keep existing cluster_tags or add new one
+                        if not grievance.cluster_tags or cluster_label not in grievance.cluster_tags:
+                            current_tags = grievance.cluster_tags or []
+                            if cluster_label not in current_tags:
+                                current_tags.append(cluster_label)
+                            grievance.cluster_tags = current_tags
+                        session.add(grievance)
+                
+                logger.info("Updated %d grievances with cluster assignments", len(cluster_assignments))
+            
+            # Generate cluster analytics
+            self._generate_cluster_analytics(cluster_labels, grievance_ids, meta_infos, repo)
+            
+            # Update last cluster time
+            with self._lock:
+                self._last_cluster_time = datetime.utcnow()
+            
+            logger.info("Clustering operation completed successfully")
+            
+        except Exception as exc:
+            logger.error("Error during clustering: %s", exc, exc_info=True)
+            raise
+
+    def _generate_cluster_analytics(
+        self, 
+        cluster_labels: List[int], 
+        grievance_ids: List[int],
+        meta_infos: List[Dict[str, Any]],
+        repo: MongoRepository
+    ) -> None:
+        """Generate and store cluster analytics in MongoDB."""
+        try:
+            analytics_data = []
+            
+            # Group by cluster
+            clusters = {}
+            for i, label in enumerate(cluster_labels):
+                if label == -1:
+                    continue  # Skip noise points
+                
+                # Convert numpy int to Python int
+                label = int(label)
+                
+                if label not in clusters:
+                    clusters[label] = {
+                        "grievance_ids": [],
+                        "tags": [],
+                        "cluster_tags": []
+                    }
+                
+                clusters[label]["grievance_ids"].append(grievance_ids[i])
+                
+                # Collect tags from metadata
+                meta = meta_infos[i]
+                if "tags" in meta:
+                    clusters[label]["tags"].extend(meta.get("tags", []))
+                if "issue_tags" in meta:
+                    clusters[label]["tags"].extend(meta.get("issue_tags", []))
+                if "cluster_tags" in meta:
+                    clusters[label]["cluster_tags"].extend(meta.get("cluster_tags", []))
+            
+            # Create analytics documents
+            for cluster_id, data in clusters.items():
+                # Get top tags by frequency
+                tag_counts = {}
+                for tag in data["tags"]:
+                    tag_counts[tag] = tag_counts.get(tag, 0) + 1
+                
+                top_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+                top_tag_list = [tag for tag, count in top_tags]
+                
+                analytics_doc = {
+                    "type": "cluster_analytics",
+                    "cluster": f"cluster_{int(cluster_id)}",  # Convert to Python int
+                    "cluster_id": int(cluster_id),  # Convert to Python int
+                    "count": len(data["grievance_ids"]),
+                    "grievance_ids": data["grievance_ids"],
+                    "top_tags": top_tag_list,
+                    "tag_distribution": {k: int(v) for k, v in dict(top_tags).items()},  # Convert counts to Python int
+                    "updated_at": datetime.utcnow()
+                }
+                analytics_data.append(analytics_doc)
+            
+            # Clear old analytics and insert new ones
+            repo.analytics.delete_many({"type": "cluster_analytics"})
+            if analytics_data:
+                repo.analytics.insert_many(analytics_data)
+                logger.info("Generated analytics for %d clusters", len(analytics_data))
+            
+        except Exception as exc:
+            logger.error("Error generating cluster analytics: %s", exc, exc_info=True)
+
+
+_CLUSTERING_ENGINE: Optional[GrievanceClusteringEngine] = None
+
+
+def get_clustering_engine() -> GrievanceClusteringEngine:
+    """Get or create the global clustering engine instance."""
+    global _CLUSTERING_ENGINE
+    if _CLUSTERING_ENGINE is None:
+        _CLUSTERING_ENGINE = GrievanceClusteringEngine(interval_seconds=30)
+    return _CLUSTERING_ENGINE
+
+
 class OpenAIClientFacade:
     def __init__(self):
         self.api_key = settings.openai.api_key
@@ -1020,3 +1266,26 @@ def generate_ai_suggestions(
         "related_grievances": related_grievances or [],
     }
     return suggestion_payload
+
+
+def trigger_clustering() -> Dict[str, Any]:
+    """Manually trigger clustering of all grievances."""
+    engine = get_clustering_engine()
+    engine.trigger_now()
+    last_time = engine.get_last_cluster_time()
+    return {
+        "status": "triggered",
+        "last_cluster_time": last_time.isoformat() if last_time else None,
+        "interval_seconds": engine.interval
+    }
+
+
+def get_clustering_status() -> Dict[str, Any]:
+    """Get current clustering engine status."""
+    engine = get_clustering_engine()
+    last_time = engine.get_last_cluster_time()
+    return {
+        "running": engine._thread is not None and engine._thread.is_alive(),
+        "last_cluster_time": last_time.isoformat() if last_time else None,
+        "interval_seconds": engine.interval
+    }

@@ -22,10 +22,13 @@ from utils import (
     fetch_cluster_analytics,
     generate_ai_suggestions,
     get_gdrive_poller,
+    get_clustering_engine,
     persist_embedding,
     reindex_gdrive_folder,
     schedule_gdrive_ingestion,
     summarize_for_admin,
+    trigger_clustering,
+    get_clustering_status,
     upload_documents_to_s3,
 )
 
@@ -84,6 +87,12 @@ def create_app() -> Flask:
                 app.logger.info("GDrive poller restarted with persisted configuration")
             else:
                 app.logger.info("No GDrive configuration found in database")
+        
+        # Start clustering engine
+        app.logger.info("Starting Grievance Clustering Engine...")
+        clustering_engine = get_clustering_engine()
+        clustering_engine.start()
+        app.logger.info("Clustering Engine started successfully")
 
     def _cors_headers(response):
         if not allowed_origins:
@@ -535,6 +544,24 @@ def create_app() -> Flask:
         try:
             analytics = fetch_cluster_analytics()
             return jsonify({"analytics": analytics})
+        except RuntimeError as exc:
+            return error_response(str(exc), 500)
+
+    @app.route("/admin/clustering/trigger", methods=["POST"])
+    def admin_trigger_clustering():
+        """Manually trigger clustering of all grievances."""
+        try:
+            result = trigger_clustering()
+            return jsonify(result)
+        except RuntimeError as exc:
+            return error_response(str(exc), 500)
+
+    @app.route("/admin/clustering/status", methods=["GET"])
+    def admin_clustering_status():
+        """Get current clustering engine status."""
+        try:
+            status = get_clustering_status()
+            return jsonify(status)
         except RuntimeError as exc:
             return error_response(str(exc), 500)
 

@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { motion } from 'framer-motion';
-import { Loader2, Sparkles } from 'lucide-react';
-import { getClusterAnalytics, getAISummary, getAdminGrievances } from '@/lib/grievancesApi';
+import { Loader2, Sparkles, RefreshCw, Activity } from 'lucide-react';
+import { getClusterAnalytics, getAISummary, getAdminGrievances, triggerClustering, getClusteringStatus } from '@/lib/grievancesApi';
 import { useToast } from '@/hooks/use-toast';
 import ReactMarkdown from 'react-markdown';
 
@@ -14,11 +14,22 @@ export default function Analytics() {
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [grievances, setGrievances] = useState<any[]>([]);
+  const [clusteringStatus, setClusteringStatus] = useState<{ running: boolean; last_cluster_time: string | null; interval_seconds: number } | null>(null);
+  const [isTriggeringClustering, setIsTriggeringClustering] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchClusterData();
     fetchGrievances();
+    fetchClusteringStatus();
+    
+    // Auto-refresh clustering status every 30 seconds
+    const intervalId = setInterval(() => {
+      fetchClusteringStatus();
+      fetchClusterData(); // Also refresh cluster data
+    }, 30000);
+    
+    return () => clearInterval(intervalId);
   }, []);
 
   const fetchClusterData = async () => {
@@ -44,6 +55,40 @@ export default function Analytics() {
       setGrievances(response.grievances);
     } catch (error) {
       console.error('Failed to fetch grievances:', error);
+    }
+  };
+
+  const fetchClusteringStatus = async () => {
+    try {
+      const status = await getClusteringStatus();
+      setClusteringStatus(status);
+    } catch (error) {
+      console.error('Failed to fetch clustering status:', error);
+    }
+  };
+
+  const handleTriggerClustering = async () => {
+    setIsTriggeringClustering(true);
+    try {
+      await triggerClustering();
+      toast({
+        title: 'Success',
+        description: 'Clustering triggered successfully. Results will update shortly.',
+      });
+      // Wait a bit and refresh data
+      setTimeout(() => {
+        fetchClusterData();
+        fetchClusteringStatus();
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to trigger clustering:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to trigger clustering.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsTriggeringClustering(false);
     }
   };
 
@@ -142,6 +187,65 @@ export default function Analytics() {
           </Card>
         </motion.div>
       </div>
+
+      {/* Clustering Status Card */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.45 }}>
+        <Card className="backdrop-blur-sm bg-card/80 border-primary/20">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Activity className="w-5 h-5 text-primary" />
+                Automatic Clustering Engine
+              </CardTitle>
+              <Button
+                onClick={handleTriggerClustering}
+                disabled={isTriggeringClustering}
+                size="sm"
+                variant="outline"
+              >
+                {isTriggeringClustering ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Clustering...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Trigger Now
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Status</p>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${clusteringStatus?.running ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                  <p className="font-medium">{clusteringStatus?.running ? 'Running' : 'Stopped'}</p>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Update Interval</p>
+                <p className="font-medium">{clusteringStatus?.interval_seconds || 30} seconds</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Last Clustered</p>
+                <p className="font-medium">
+                  {clusteringStatus?.last_cluster_time 
+                    ? new Date(clusteringStatus.last_cluster_time).toLocaleTimeString()
+                    : 'Never'}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              The clustering engine automatically groups similar grievances using cosine similarity on embeddings. 
+              Clusters update every {clusteringStatus?.interval_seconds || 30} seconds.
+            </p>
+          </CardContent>
+        </Card>
+      </motion.div>
 
       {/* AI Summary Card */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.5 }}>
@@ -256,11 +360,11 @@ export default function Analytics() {
       </motion.div>
 
       {/* Cluster Analytics Section */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.7 }}>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.8 }}>
         <Card className="backdrop-blur-sm bg-card/80">
           <CardHeader>
-            <CardTitle>Grievance Clusters</CardTitle>
-            <p className="text-sm text-muted-foreground">Automatically identified grievance clusters from your data.</p>
+            <CardTitle>Grievance Clusters (Cosine Similarity)</CardTitle>
+            <p className="text-sm text-muted-foreground">Automatically identified grievance clusters based on embedding similarity.</p>
           </CardHeader>
           <CardContent>
             {isLoadingClusters ? (

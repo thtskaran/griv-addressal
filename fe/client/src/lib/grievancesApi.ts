@@ -118,6 +118,12 @@ export interface GDriveReindexResponse {
   reindexed_at: string;
 }
 
+export interface ClusteringStatus {
+  running: boolean;
+  last_cluster_time: string | null;
+  interval_seconds: number;
+}
+
 // --- Student/User API Functions ---
 
 // GET /health
@@ -189,6 +195,18 @@ export const reindexGDriveFolder = async (): Promise<GDriveReindexResponse> => {
 // GET /admin/analytics/clusters
 export const getClusterAnalytics = async (): Promise<{ analytics: ClusterAnalytics[] }> => {
   const { data } = await apiClient.get('/admin/analytics/clusters');
+  return data;
+};
+
+// POST /admin/clustering/trigger
+export const triggerClustering = async (): Promise<{ status: string; last_cluster_time: string | null; interval_seconds: number }> => {
+  const { data } = await apiClient.post('/admin/clustering/trigger');
+  return data;
+};
+
+// GET /admin/clustering/status
+export const getClusteringStatus = async (): Promise<ClusteringStatus> => {
+  const { data } = await apiClient.get('/admin/clustering/status');
   return data;
 };
 
