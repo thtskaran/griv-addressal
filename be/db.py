@@ -150,6 +150,16 @@ class Grievance(Base, TimestampMixin):
     student = relationship("Student", back_populates="grievances", lazy="joined")
 
 
+class GDriveConfig(Base):
+    __tablename__ = "gdrive_config"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    folder_id = Column(String, nullable=False, unique=True)
+    start_page_token = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 @event.listens_for(SessionFactory, "after_flush")
 def _update_timestamp(session, flush_context):
     for instance in session.dirty:
@@ -186,6 +196,24 @@ def get_or_create_default_admin(session) -> Admin:
         session.add(admin)
         session.flush()
     return admin
+
+
+def get_gdrive_config(session):
+    """Get the first (and only) Google Drive configuration."""
+    return session.query(GDriveConfig).first()
+
+
+def upsert_gdrive_config(session, folder_id: str, start_page_token: Optional[str] = None):
+    """Create or update Google Drive configuration."""
+    config = get_gdrive_config(session)
+    if config:
+        config.folder_id = folder_id
+        if start_page_token is not None:
+            config.start_page_token = start_page_token
+    else:
+        config = GDriveConfig(folder_id=folder_id, start_page_token=start_page_token)
+        session.add(config)
+    return config
 
 
 def seed_default_entities() -> None:

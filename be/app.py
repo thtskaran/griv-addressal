@@ -5,12 +5,15 @@ from flask import Flask, jsonify, request
 from config import settings
 from db import (
     Department,
+    GDriveConfig,
     Grievance,
     GrievanceStatus,
     Student,
+    get_gdrive_config,
     get_or_create_default_student,
     init_db,
     session_scope,
+    upsert_gdrive_config,
 )
 from utils import (
     append_chat,
@@ -51,6 +54,19 @@ def create_app() -> Flask:
         allowed_origins = {origin.strip() for origin in settings.allow_cors_origins.split(",")}
     else:
         allowed_origins = set()
+
+    # Restore Google Drive folder from database on startup
+    with app.app_context():
+        with session_scope() as session:
+            config = get_gdrive_config(session)
+            if config:
+                app.logger.info("Restoring GDrive configuration from database: folder_id=%s, token=%s", 
+                              config.folder_id, config.start_page_token)
+                poller = get_gdrive_poller()
+                poller.start(config.folder_id, change_token=config.start_page_token)
+                app.logger.info("GDrive poller restarted with persisted configuration")
+            else:
+                app.logger.info("No GDrive configuration found in database")
 
     def _cors_headers(response):
         if not allowed_origins:
@@ -287,8 +303,19 @@ def create_app() -> Flask:
         folder_id = payload.get("folder_id")
         if not folder_id:
             return error_response("folder_id is required", 400)
+        
+        app.logger.info("Admin registering GDrive folder: %s", folder_id)
         try:
             response = schedule_gdrive_ingestion(folder_id)
+            start_token = response.get("start_page_token")
+            
+            # Persist to database
+            with session_scope() as session:
+                app.logger.info("Persisting GDrive config to database: folder_id=%s, token=%s", 
+                              folder_id, start_token)
+                upsert_gdrive_config(session, folder_id, start_token)
+                app.logger.info("GDrive config persisted successfully")
+            
             status = response.get("status")
             next_poll = response.get("next_poll_in_seconds")
             interval = response.get("polling_interval_seconds")
@@ -301,28 +328,54 @@ def create_app() -> Flask:
                 )
             return jsonify(response)
         except ValueError as exc:
+            app.logger.error("GDrive registration failed: %s", exc, exc_info=True)
             return error_response(str(exc), 400)
 
     @app.route("/admin/gdrive/reindex", methods=["GET"])
     def admin_reindex_gdrive():
+        app.logger.info("Admin requested GDrive reindex")
         poller = get_gdrive_poller()
         state = poller.snapshot_state()
         folder_id = state.get("folder_id")
+        
         if not folder_id:
-            return error_response("No Google Drive folder configured for ingestion", 400)
+            # Try to restore from database
+            with session_scope() as session:
+                config = get_gdrive_config(session)
+                if config:
+                    folder_id = config.folder_id
+                    app.logger.info("Restored folder_id from database: %s", folder_id)
+                else:
+                    app.logger.warning("No Google Drive folder configured (not in poller or database)")
+                    return error_response("No Google Drive folder configured for ingestion", 400)
 
         previous_token = state.get("change_token")
+        app.logger.info("Stopping poller for reindex (folder_id=%s, previous_token=%s)", 
+                       folder_id, previous_token)
         poller.stop()
+        
         try:
+            app.logger.info("Starting reindex operation for folder %s", folder_id)
             result = reindex_gdrive_folder(folder_id)
             next_token = result.get("next_change_token") or previous_token
+            app.logger.info("Reindex completed successfully, next_token=%s", next_token)
+            
+            # Update database with new token
+            with session_scope() as session:
+                app.logger.info("Updating GDrive config in database with new token: %s", next_token)
+                upsert_gdrive_config(session, folder_id, next_token)
+                app.logger.info("Database updated with new token")
+            
         except ValueError as exc:
+            app.logger.error("Reindex failed (ValueError): %s", exc, exc_info=True)
             poller.start(folder_id, change_token=previous_token)
             return error_response(str(exc), 400)
         except Exception as exc:
+            app.logger.error("Reindex failed (Exception): %s", exc, exc_info=True)
             poller.start(folder_id, change_token=previous_token)
             return error_response(str(exc), 500)
 
+        app.logger.info("Restarting poller with folder_id=%s, token=%s", folder_id, next_token)
         poller.start(folder_id, change_token=next_token)
         return jsonify({"status": "REINDEXED", **result})
 

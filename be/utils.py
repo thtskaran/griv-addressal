@@ -300,6 +300,7 @@ class KnowledgeBaseIngestor:
         self._scopes = ["https://www.googleapis.com/auth/drive.readonly"]
 
     def register_folder(self, folder_id: str) -> Dict[str, Any]:
+        logger.info("=== Starting GDrive folder registration for folder_id=%s ===", folder_id)
         if not self.service_account_path:
             raise ValueError("Missing client.json service account configuration.")
         if not Path(self.service_account_path).exists():
@@ -313,8 +314,16 @@ class KnowledgeBaseIngestor:
             )
 
         request_id = hashlib.sha256(f"{folder_id}-{time.time()}".encode()).hexdigest()
+        logger.info("Request ID generated: %s", request_id)
+        
+        logger.info("Building Drive API client...")
         drive = self._build_drive_client()
+        logger.info("Drive API client built successfully")
+        
+        logger.info("Fetching start page token from Google Drive...")
         start_token = self._get_start_page_token(drive)
+        logger.info("Start page token received: %s", start_token)
+        
         logger.info(
             "Registered Drive folder %s via request %s (start token=%s)",
             folder_id,
@@ -332,23 +341,31 @@ class KnowledgeBaseIngestor:
         self, folder_id: str, change_token: Optional[str] = None
     ) -> Optional[str]:
         """Fetch Drive deltas and synchronise them into MongoDB."""
+        logger.info("=== Starting poll_and_ingest for folder_id=%s, change_token=%s ===", folder_id, change_token)
         if service_account is None or build is None:
             raise RuntimeError(
                 "google-api-python-client is required for Google Drive ingestion."
             )
 
+        logger.info("Building Drive API client for polling...")
         drive = self._build_drive_client()
+        logger.info("Drive API client built for polling")
 
         if change_token is None:
+            logger.info("No change token provided, performing full snapshot...")
             snapshot_chunks, next_token = self._snapshot_folder(drive, folder_id)
+            logger.info("Snapshot completed: %d chunks, next_token=%s", len(snapshot_chunks), next_token)
             self._persist_chunks(folder_id, snapshot_chunks, [])
             return next_token
 
+        logger.info("Change token provided, collecting incremental changes...")
         changes, deleted, next_token = self._collect_drive_changes(drive, folder_id, change_token)
+        logger.info("Changes collected: %d updates, %d deletions, next_token=%s", len(changes), len(deleted), next_token)
         self._persist_chunks(folder_id, changes, deleted)
         return next_token
 
     def reindex_folder(self, folder_id: str) -> Dict[str, Any]:
+        logger.info("=== Starting reindex_folder for folder_id=%s ===", folder_id)
         if not folder_id:
             raise ValueError("folder_id is required for reindexing.")
         if not self.service_account_path:
@@ -362,10 +379,20 @@ class KnowledgeBaseIngestor:
             raise RuntimeError(
                 "google-api-python-client is required for Google Drive ingestion."
             )
+        
+        logger.info("Building Drive API client for reindexing...")
         drive = self._build_drive_client()
+        logger.info("Drive API client built for reindexing")
+        
+        logger.info("Starting full folder snapshot for reindex...")
         chunks, next_token = self._snapshot_folder(drive, folder_id)
+        logger.info("Snapshot for reindex completed: %d chunks, next_token=%s", len(chunks), next_token)
+        
+        logger.info("Replacing KB folder chunks in MongoDB...")
         repo = MongoRepository()
         stats = repo.replace_kb_folder_chunks(folder_id, chunks)
+        logger.info("KB chunks replaced: %s", stats)
+        
         return {
             "folder_id": folder_id,
             "chunks_discovered": len(chunks),
@@ -376,32 +403,50 @@ class KnowledgeBaseIngestor:
         }
 
     def _build_drive_client(self):
+        logger.debug("Authenticating with service account: %s", self.service_account_path)
         credentials = service_account.Credentials.from_service_account_file(
             self.service_account_path,
             scopes=self._scopes,
         )
+        logger.debug("Building Drive v3 API client...")
         return build("drive", "v3", credentials=credentials, cache_discovery=False)
 
     def _get_start_page_token(self, drive) -> str:
+        logger.debug("Requesting start page token from Drive API...")
         response = drive.changes().getStartPageToken().execute()
-        return response.get("startPageToken")
+        token = response.get("startPageToken")
+        logger.debug("Start page token retrieved: %s", token)
+        return token
 
     def _snapshot_folder(self, drive, folder_id: str) -> Tuple[List[Dict[str, Any]], str]:
+        logger.info("Listing all files in folder %s...", folder_id)
         files = self._list_folder_files(drive, folder_id)
+        logger.info("Found %d files in folder %s", len(files), folder_id)
+        
         chunks: List[Dict[str, Any]] = []
-        for file in files:
-            chunks.extend(self._build_chunks_for_file(drive, folder_id, file))
+        for idx, file in enumerate(files, 1):
+            logger.info("Processing file %d/%d: %s (id=%s)", idx, len(files), file.get("name"), file.get("id"))
+            file_chunks = self._build_chunks_for_file(drive, folder_id, file)
+            logger.info("Generated %d chunks for file %s", len(file_chunks), file.get("name"))
+            chunks.extend(file_chunks)
+        
+        logger.info("Total chunks generated from all files: %d", len(chunks))
         next_token = self._get_start_page_token(drive)
+        logger.info("Next page token for future polling: %s", next_token)
         return chunks, next_token
 
     def _collect_drive_changes(
         self, drive, folder_id: str, change_token: str
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]], str]:
+        logger.info("Collecting changes from Drive API starting with token: %s", change_token)
         page_token = change_token
         updates: List[Dict[str, Any]] = []
         deleted: List[Dict[str, str]] = []
+        page_count = 0
 
         while True:
+            page_count += 1
+            logger.debug("Fetching changes page %d with token: %s", page_count, page_token)
             request = (
                 drive.changes()
                 .list(
@@ -419,29 +464,43 @@ class KnowledgeBaseIngestor:
                 )
             )
             response = request.execute()
-            for change in response.get("changes", []):
+            changes = response.get("changes", [])
+            logger.info("Received %d changes in page %d", len(changes), page_count)
+            
+            for change in changes:
                 file_obj = change.get("file")
+                file_id = change.get("fileId")
                 if change.get("removed") or not file_obj:
-                    deleted.append({"doc_id": change.get("fileId"), "chunk_id": "*"})
+                    logger.debug("File %s removed or not accessible", file_id)
+                    deleted.append({"doc_id": file_id, "chunk_id": "*"})
                     continue
                 parents = file_obj.get("parents") or []
                 if folder_id not in parents:
+                    logger.debug("File %s (%s) not in target folder, marking for deletion", file_id, file_obj.get("name"))
                     deleted.append({"doc_id": file_obj.get("id"), "chunk_id": "*"})
                     continue
-                updates.extend(
-                    self._build_chunks_for_file(drive, folder_id, file_obj)
-                )
+                logger.info("Processing updated file: %s (id=%s)", file_obj.get("name"), file_obj.get("id"))
+                file_updates = self._build_chunks_for_file(drive, folder_id, file_obj)
+                logger.info("Generated %d chunks for updated file %s", len(file_updates), file_obj.get("name"))
+                updates.extend(file_updates)
 
             page_token = response.get("nextPageToken")
             if not page_token:
                 new_token = response.get("newStartPageToken") or change_token
+                logger.info("Change collection complete. Total updates: %d, deletions: %d, new_token: %s", 
+                           len(updates), len(deleted), new_token)
                 return updates, deleted, new_token
 
     def _list_folder_files(self, drive, folder_id: str) -> List[Dict[str, Any]]:
+        logger.info("Querying Drive API for files in folder: %s", folder_id)
         files: List[Dict[str, Any]] = []
         page_token: Optional[str] = None
         query = f"'{folder_id}' in parents and trashed = false"
+        page_count = 0
+        
         while True:
+            page_count += 1
+            logger.debug("Fetching files page %d", page_count)
             response = (
                 drive.files()
                 .list(
@@ -454,22 +513,36 @@ class KnowledgeBaseIngestor:
                 )
                 .execute()
             )
-            files.extend(response.get("files", []))
+            page_files = response.get("files", [])
+            logger.debug("Page %d returned %d files", page_count, len(page_files))
+            files.extend(page_files)
             page_token = response.get("nextPageToken")
             if not page_token:
                 break
+        
+        logger.info("Total files retrieved: %d", len(files))
         return files
 
     def _build_chunks_for_file(
         self, drive, folder_id: str, file_obj: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         file_id = file_obj.get("id")
+        file_name = file_obj.get("name")
         if not file_id:
+            logger.warning("File object missing ID, skipping")
             return []
+        
+        logger.info("Downloading content for file: %s (id=%s)", file_name, file_id)
         content = self._download_file_content(drive, file_obj)
         if content is None:
+            logger.warning("No content downloaded for file %s, skipping chunking", file_name)
             return []
+        
+        logger.info("Downloaded %d characters of content from %s", len(content), file_name)
+        logger.info("Chunking text content...")
         chunks = self._chunk_text(content)
+        logger.info("Text chunked into %d segments for file %s", len(chunks), file_name)
+        
         metadata = {
             "file_name": file_obj.get("name"),
             "mime_type": file_obj.get("mimeType"),
@@ -478,9 +551,13 @@ class KnowledgeBaseIngestor:
         }
         records: List[Dict[str, Any]] = []
         facade = OpenAIClientFacade()
+        
         for index, chunk_text in enumerate(chunks, start=1):
             chunk_id = f"chunk_{index:04d}"
+            logger.debug("Generating embedding for chunk %s of file %s", chunk_id, file_name)
             embedding = facade.generate_embedding(chunk_text)
+            logger.debug("Embedding generated: %d dimensions for chunk %s", len(embedding), chunk_id)
+            
             records.append(
                 {
                     "type": "kb_chunk",
@@ -494,26 +571,36 @@ class KnowledgeBaseIngestor:
                     "source": file_obj.get("name"),
                 }
             )
+        
+        logger.info("Built %d chunk records for file %s", len(records), file_name)
         return records
 
     def _download_file_content(self, drive, file_obj: Dict[str, Any]) -> Optional[str]:
         file_id = file_obj.get("id")
         mime_type = file_obj.get("mimeType")
+        file_name = file_obj.get("name")
+        
         if not file_id or not mime_type:
+            logger.warning("File missing ID or mime_type: %s", file_name)
             return None
 
         try:
+            logger.debug("Attempting download for %s (mime=%s)", file_name, mime_type)
             if mime_type == "application/vnd.google-apps.document":
+                logger.debug("Exporting Google Doc as text/plain")
                 request = drive.files().export_media(fileId=file_id, mimeType="text/plain")
             elif mime_type == "application/vnd.google-apps.spreadsheet":
+                logger.debug("Exporting Google Sheet as text/csv")
                 request = drive.files().export_media(fileId=file_id, mimeType="text/csv")
             elif mime_type == "application/vnd.google-apps.presentation":
+                logger.debug("Exporting Google Slides as text/plain")
                 request = drive.files().export_media(fileId=file_id, mimeType="text/plain")
             elif mime_type.startswith("text/") or mime_type in {
                 "application/json",
                 "application/xml",
                 "application/javascript",
             }:
+                logger.debug("Downloading as media (text-like mime type)")
                 request = drive.files().get_media(fileId=file_id)
             else:
                 logger.debug(
@@ -525,12 +612,20 @@ class KnowledgeBaseIngestor:
             downloader = MediaIoBaseDownload(buffer, request)
             done = False
             while not done:
-                _, done = downloader.next_chunk()
+                status, done = downloader.next_chunk()
+                if status:
+                    logger.debug("Download progress for %s: %d%%", file_name, int(status.progress() * 100))
+            
             buffer.seek(0)
+            logger.debug("Download complete for %s, decoding content...", file_name)
             try:
-                return buffer.read().decode("utf-8")
+                content = buffer.read().decode("utf-8")
+                logger.info("Successfully decoded %s as UTF-8 (%d chars)", file_name, len(content))
+                return content
             except UnicodeDecodeError:
-                return buffer.getvalue().decode("latin-1", errors="ignore")
+                content = buffer.getvalue().decode("latin-1", errors="ignore")
+                logger.warning("UTF-8 decode failed for %s, using latin-1 fallback (%d chars)", file_name, len(content))
+                return content
         except HttpError as exc:
             logger.warning("Failed to download Drive file %s: %s", file_id, exc)
             return None
@@ -563,10 +658,15 @@ class KnowledgeBaseIngestor:
             logger.debug("No knowledge-base changes detected for folder %s", folder_id)
             return
 
+        logger.info("=== Persisting chunks to MongoDB for folder %s ===", folder_id)
+        logger.info("Chunks to upsert: %d, Chunks to delete: %d", len(chunks), len(deleted_refs))
+        
         repo = MongoRepository()
         modified = 0
         removed = 0
+        
         if chunks:
+            logger.info("Starting bulk upsert of %d chunks...", len(chunks))
             modified = repo.bulk_upsert_kb_chunks(chunks)
             logger.info(
                 "Upserted %s knowledge-base chunks for folder %s", modified, folder_id
@@ -578,15 +678,20 @@ class KnowledgeBaseIngestor:
                 for ref in deleted_refs
                 if ref.get("doc_id") and ref.get("chunk_id")
             ]
+            logger.info("Normalized %d deletion references", len(normalized))
             if normalized:
+                logger.info("Starting deletion of %d chunk references...", len(normalized))
                 removed = repo.delete_kb_chunks(normalized)
                 logger.info(
                     "Removed %s knowledge-base chunks for folder %s", removed, folder_id
                 )
+        
         if modified == 0 and removed == 0:
             logger.debug(
                 "Knowledge-base poll completed without material changes for folder %s", folder_id
             )
+        else:
+            logger.info("=== Persistence complete: %d upserted, %d removed ===", modified, removed)
 
 
 _GDRIVE_POLLER: Optional[KnowledgeBaseChangePoller] = None
@@ -608,12 +713,17 @@ class OpenAIClientFacade:
 
     def generate_embedding(self, text: str) -> List[float]:
         if self.client:
+            logger.debug("Calling OpenAI API for embedding (model=%s, text_length=%d)", 
+                        self.embedding_model, len(text))
             response = self.client.embeddings.create(
                 input=text,
                 model=self.embedding_model,
             )
-            return response.data[0].embedding
+            embedding = response.data[0].embedding
+            logger.debug("OpenAI embedding received: %d dimensions", len(embedding))
+            return embedding
         # Deterministic fallback to keep downstream logic working offline.
+        logger.warning("OpenAI client not configured, using fallback embedding generation")
         digest = hashlib.sha256(text.encode()).digest()
         return [int(b) / 255.0 for b in digest]
 
