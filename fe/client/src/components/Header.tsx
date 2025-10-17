@@ -1,6 +1,5 @@
 import { Bell, LogOut, User, Moon, Sun } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-// **FIX**: Removed isAnonymousAtom as it's no longer needed for this logic.
 import { userRoleAtom, unreadNotificationsAtom, isAnonymousAtom } from '@/lib/atoms';
 import { useLocation } from 'wouter';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -18,9 +17,7 @@ import { useState, useEffect } from 'react';
 
 export default function Header() {
   const [userRole, setUserRole] = useRecoilState(userRoleAtom);
-  // **FIX**: The 'isAnonymous' status is now correctly derived directly from the user's role.
-  // This ensures that if there's no role, the user is always considered anonymous.
-const isModeAnonymous = useRecoilValue(isAnonymousAtom);
+  const isModeAnonymous = useRecoilValue(isAnonymousAtom);
   const unreadCount = useRecoilValue(unreadNotificationsAtom);
   const [, setLocation] = useLocation();
   const [isDark, setIsDark] = useState(false);
@@ -73,7 +70,9 @@ const isModeAnonymous = useRecoilValue(isAnonymousAtom);
           >
             {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </Button>
-          {userRole === 'user' && (
+
+          {/* **FIX**: Changed condition from 'userRole === "user"' to '!isAnonymous' to show for all logged-in users */}
+          {!isAnonymous && (
             <Button
               size="icon"
               variant="ghost"
@@ -89,7 +88,6 @@ const isModeAnonymous = useRecoilValue(isAnonymousAtom);
               )}
             </Button>
           )}
-
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

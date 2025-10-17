@@ -45,12 +45,23 @@ export default function Notifications() {
                 <div>
                   <CardTitle className="text-2xl">Notifications</CardTitle>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}` : 'All caught up!'}
+                    {unreadCount > 0
+                      ? `${unreadCount} unread notification${
+                          unreadCount > 1 ? 's' : ''
+                        }`
+                      : 'All caught up!'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    These notifications have also been sent to your email.
                   </p>
                 </div>
               </div>
               {unreadCount > 0 && (
-                <Button variant="outline" onClick={markAllAsRead} data-testid="button-mark-all-read">
+                <Button
+                  variant="outline"
+                  onClick={markAllAsRead}
+                  data-testid="button-mark-all-read"
+                >
                   Mark all as read
                 </Button>
               )}
@@ -64,15 +75,27 @@ export default function Notifications() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.3, delay: index * 0.05 }}
               >
-                <Card className={`${!notification.read ? 'border-primary/50 bg-primary/5' : ''} hover-elevate`}>
+                <Card
+                  className={`${
+                    !notification.read
+                      ? 'border-primary/50 bg-primary/5'
+                      : ''
+                  } hover-elevate`}
+                >
                   <CardContent className="p-4">
                     <div className="flex gap-4">
-                      <div className="flex-shrink-0 mt-1">{getNotificationIcon(notification.type)}</div>
+                      <div className="flex-shrink-0 mt-1">
+                        {getNotificationIcon(notification.type)}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <h4 className="font-semibold">{notification.title}</h4>
-                            <p className="text-sm text-muted-foreground mt-1">{notification.message}</p>
+                            <h4 className="font-semibold">
+                              {notification.title}
+                            </h4>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {notification.message}
+                            </p>
                           </div>
                           {!notification.read && (
                             <Badge variant="default" className="flex-shrink-0">
@@ -82,7 +105,10 @@ export default function Notifications() {
                         </div>
                         <p className="text-xs text-muted-foreground mt-2">
                           {notification.createdAt.toLocaleDateString()} at{' '}
-                          {notification.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {notification.createdAt.toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
                         </p>
                       </div>
                     </div>
