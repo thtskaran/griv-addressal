@@ -27,6 +27,8 @@ import {
 } from '@/components/ui/dialog';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
+import { getGrievances, getGrievanceById, addStudentChatMessage } from '@/lib/grievancesApi';
+import { useToast } from '@/hooks/use-toast';
 
 // Interface for a single chat message
 interface ChatMessage {
@@ -61,6 +63,7 @@ export default function UserDashboard() {
   const [isAnonymous, setIsAnonymous] = useRecoilState(isAnonymousAtom);
   const [, setLocation] = useLocation();
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
   // Scroll to the bottom of chat history
   useEffect(() => {
@@ -73,6 +76,7 @@ export default function UserDashboard() {
   useEffect(() => {
     const fetchGrievances = async () => {
       try {
+<<<<<<< HEAD
         const mockData: APIGrievance[] = [
           {
             id: 123,
@@ -159,16 +163,61 @@ export default function UserDashboard() {
         setGrievances(mockData);
       } catch (err) {
         console.error('Error fetching grievances:', err);
+=======
+        const response = await getGrievances();
+        setGrievances(response.grievances.map(g => ({
+          id: g.id,
+          title: g.title,
+          description: g.description || '',
+          status: g.status,
+          assigned_to: g.assigned_to,
+          cluster: g.cluster,
+          created_at: g.created_at,
+          tags: g.issue_tags,
+          s3_doc_urls: g.s3_doc_urls,
+          chat: [],
+        })));
+      } catch (err) {
+        console.error('Error fetching grievances:', err);
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch grievances. Please try again.',
+          variant: 'destructive',
+        });
+>>>>>>> 31c9ec0 (api integrations)
       } finally {
         setLoading(false);
       }
     };
     fetchGrievances();
+<<<<<<< HEAD
   }, []);
+=======
+  }, [toast]);
+
+  // ✅ Load chat history when opening chat dialog
+  const handleOpenChat = async (grievance: APIGrievance) => {
+    try {
+      const response = await getGrievanceById(grievance.id);
+      setChatGrievance({
+        ...grievance,
+        chat: response.chat || [],
+      });
+    } catch (error) {
+      console.error('Failed to load chat history:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load chat history.',
+        variant: 'destructive',
+      });
+    }
+  };
+>>>>>>> 31c9ec0 (api integrations)
 
   // ✅ Handle sending a new message
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !chatGrievance) return;
+<<<<<<< HEAD
     const messagePayload = {
       role: 'student',
       message: newMessage,
@@ -193,6 +242,36 @@ export default function UserDashboard() {
       setNewMessage('');
     } catch (error) {
       console.error('Failed to send message:', error);
+=======
+
+    try {
+      const response = await addStudentChatMessage(chatGrievance.id, newMessage);
+      
+      // Get the newly added message from response
+      const newMessages = response.conversations || [];
+      const latestMessage = newMessages[newMessages.length - 1];
+
+      if (latestMessage) {
+        // Update the chat grievance with the new message
+        setChatGrievance(prev => prev ? {
+          ...prev,
+          chat: [...(prev.chat || []), latestMessage]
+        } : null);
+      }
+
+      setNewMessage('');
+      toast({
+        title: 'Message Sent',
+        description: 'Your message has been sent successfully.',
+      });
+    } catch (error) {
+      console.error("Failed to send message:", error);
+      toast({
+        title: 'Error',
+        description: 'Failed to send message. Please try again.',
+        variant: 'destructive',
+      });
+>>>>>>> 31c9ec0 (api integrations)
     }
   };
 
@@ -213,12 +292,23 @@ export default function UserDashboard() {
       // Update local state for instant feedback
       const updatedGrievances = grievances.map((g) =>
         g.id === selectedGrievance.id ? { ...g, rating } : g
+<<<<<<< HEAD
       );
       setGrievances(updatedGrievances);
       setSelectedGrievance((prev) => (prev ? { ...prev, rating } : null));
     } catch (error) {
       console.error('Rating submission failed:', error);
     }
+=======
+    );
+    setGrievances(updatedGrievances);
+    setSelectedGrievance(prev => prev ? { ...prev, rating } : null);
+    
+    toast({
+      title: 'Rating Submitted',
+      description: `You rated this grievance ${rating} stars.`,
+    });
+>>>>>>> 31c9ec0 (api integrations)
   };
 
   // ✅ Filter grievances (updated to include tags)
@@ -226,7 +316,11 @@ export default function UserDashboard() {
     (g) =>
       g.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       g.cluster.toLowerCase().includes(searchQuery.toLowerCase()) ||
+<<<<<<< HEAD
       g.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+=======
+      g.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+>>>>>>> 31c9ec0 (api integrations)
   );
 
   // ✅ Status badge colors
@@ -238,6 +332,10 @@ export default function UserDashboard() {
       case 'IN_PROGRESS':
         return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
       case 'REJECTED':
+<<<<<<< HEAD
+=======
+      case 'DROPPED':
+>>>>>>> 31c9ec0 (api integrations)
         return 'bg-red-500/10 text-red-500 border-red-500/20';
       default:
         return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
@@ -293,6 +391,7 @@ export default function UserDashboard() {
             </div>
 
             {loading ? (
+<<<<<<< HEAD
               <p className="text-center text-muted-foreground py-6">
                 Loading grievances...
               </p>
@@ -300,6 +399,11 @@ export default function UserDashboard() {
               <p className="text-center text-muted-foreground py-6">
                 No grievances found.
               </p>
+=======
+              <p className="text-center text-muted-foreground py-6">Loading grievances...</p>
+            ) : filteredGrievances.length === 0 ? (
+              <p className="text-center text-muted-foreground py-6">No grievances found.</p>
+>>>>>>> 31c9ec0 (api integrations)
             ) : (
               <div className="rounded-lg border">
                 <Table>
@@ -336,6 +440,7 @@ export default function UserDashboard() {
                           <Badge variant="outline">{g.assigned_to}</Badge>
                         </TableCell>
                         <TableCell className="flex items-center gap-1">
+<<<<<<< HEAD
                           <Button
                             size="sm"
                             variant="ghost"
@@ -348,6 +453,12 @@ export default function UserDashboard() {
                             variant="ghost"
                             onClick={() => setChatGrievance(g)}
                           >
+=======
+                          <Button size="sm" variant="ghost" onClick={() => setSelectedGrievance(g)}>
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleOpenChat(g)}>
+>>>>>>> 31c9ec0 (api integrations)
                             <MessageSquare className="w-4 h-4" />
                           </Button>
                         </TableCell>
@@ -366,7 +477,13 @@ export default function UserDashboard() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-2xl">{selectedGrievance?.title}</DialogTitle>
+<<<<<<< HEAD
             <DialogDescription>Grievance ID: {selectedGrievance?.id}</DialogDescription>
+=======
+            <DialogDescription>
+              Grievance ID: {selectedGrievance?.id}
+            </DialogDescription>
+>>>>>>> 31c9ec0 (api integrations)
           </DialogHeader>
           {selectedGrievance && (
             <div className="space-y-4 py-4">
@@ -379,10 +496,14 @@ export default function UserDashboard() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <h4 className="font-semibold mb-2 text-sm">Status</h4>
+<<<<<<< HEAD
                   <Badge
                     className={getStatusColor(selectedGrievance.status)}
                     variant="outline"
                   >
+=======
+                  <Badge className={getStatusColor(selectedGrievance.status)} variant="outline">
+>>>>>>> 31c9ec0 (api integrations)
                     {selectedGrievance.status.replaceAll('_', ' ')}
                   </Badge>
                 </div>
@@ -393,8 +514,13 @@ export default function UserDashboard() {
                 <div>
                   <h4 className="font-semibold mb-2 text-sm">Cluster</h4>
                   <p className="text-muted-foreground">{selectedGrievance.cluster}</p>
+<<<<<<< HEAD
                 </div>
                 <div>
+=======
+                 </div>
+                 <div>
+>>>>>>> 31c9ec0 (api integrations)
                   <h4 className="font-semibold mb-1 text-sm">Created At</h4>
                   <p className="text-muted-foreground">
                     {new Date(selectedGrievance.created_at).toLocaleString()}
@@ -431,6 +557,7 @@ export default function UserDashboard() {
                       />
                     ))}
                   </div>
+<<<<<<< HEAD
                   {selectedGrievance.rating && (
                     <p className="text-xs text-muted-foreground mt-1">
                       You rated this grievance {selectedGrievance.rating}/5 ⭐
@@ -438,6 +565,9 @@ export default function UserDashboard() {
                   )}
                 </div>
               )}
+=======
+                )}
+>>>>>>> 31c9ec0 (api integrations)
             </div>
           )}
         </DialogContent>

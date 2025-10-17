@@ -1,5 +1,5 @@
 from typing import Any, Dict, Iterable, Optional
-
+from flask_cors import CORS
 from flask import Flask, jsonify, request
 
 from config import settings
@@ -527,7 +527,7 @@ def error_response(message: str, status_code: int):
 
 
 app = create_app()
-
+CORS(app) 
 if __name__ == "__main__":
     init_db()
     app.run(host="0.0.0.0", port=8000)

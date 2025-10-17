@@ -1,193 +1,293 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Button } from '@/components/ui/button';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { motion } from 'framer-motion';
-
-// **UPDATED MOCK DATA** with sub-categories for the new drill-down feature.
-// In your real app, this would come from your API.
-const mockGrievances = [
-  // Hostel
-  { id: 1, title: 'Slow Wifi in Block C', category: 'Hostel', subCategory: 'Wifi', status: 'Open' },
-  { id: 2, title: 'Mess food quality is poor', category: 'Hostel', subCategory: 'Food', status: 'In Progress' },
-  { id: 3, title: 'Frequent power cuts', category: 'Hostel', subCategory: 'Electricity', status: 'Resolved' },
-  { id: 4, title: 'Another wifi issue', category: 'Hostel', subCategory: 'Wifi', status: 'Open' },
-  { id: 5, title: 'Unclean washrooms', category: 'Hostel', subCategory: 'Cleanliness', status: 'Resolved' },
-  { id: 6, title: 'Late night food availability', category: 'Hostel', subCategory: 'Food', status: 'In Progress' },
-  { id: 7, title: 'AC not working', category: 'Hostel', subCategory: 'Electricity', status: 'Open' },
-  { id: 8, title: 'Slow Wifi again', category: 'Hostel', subCategory: 'Wifi', status: 'In Progress' },
-  
-  // Academic
-  { id: 9, title: 'Exam schedule clash', category: 'Academic', subCategory: 'Exams', status: 'Open' },
-  { id: 10, title: 'Syllabus not completed for CS101', category: 'Academic', subCategory: 'Syllabus', status: 'In Progress' },
-  { id: 11, title: 'Grading error in mid-terms', category: 'Academic', subCategory: 'Grading', status: 'Resolved' },
-  { id: 12, title: 'Need more library books', category: 'Academic', subCategory: 'Library', status: 'Open' },
-  { id: 13, title: 'Request for course material', category: 'Academic', subCategory: 'Syllabus', status: 'Resolved' },
-
-  // Facilities
-  { id: 14, title: 'Broken gym equipment', category: 'Facilities', subCategory: 'Gym', status: 'Open' },
-  { id: 15, title: 'Not enough parking space', category: 'Facilities', subCategory: 'Parking', status: 'In Progress' },
-  { id: 16, title: 'Water cooler not working', category: 'Facilities', subCategory: 'Water', status: 'Resolved' },
-];
-
+import { Loader2, Sparkles } from 'lucide-react';
+import { getClusterAnalytics, getAISummary, getAdminGrievances } from '@/lib/grievancesApi';
+import { useToast } from '@/hooks/use-toast';
 
 export default function Analytics() {
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  // **NEW**: State to hold cluster analytics data from the backend
-  const [clusterData, setClusterData] = useState([]);
+  const [clusterData, setClusterData] = useState<{ cluster: string; count: number; top_tags: string[] }[]>([]);
+  const [isLoadingClusters, setIsLoadingClusters] = useState(true);
+  const [aiSummary, setAiSummary] = useState<string>('');
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+  const [grievances, setGrievances] = useState<any[]>([]);
+  const { toast } = useToast();
 
-  // **NEW**: useEffect to fetch cluster data on component mount
   useEffect(() => {
-    // TODO: Replace this with an actual API call to GET /admin/analytics/clusters
-    const fetchClusterData = () => {
-      // This is sample data matching your backend response structure
-      const response = {
-        analytics: [
-          { cluster: "Infrastructure", count: 18, top_tags: ["hostel", "library"] },
-          { cluster: "Academics", count: 12, top_tags: ["exams", "syllabus"] },
-          { cluster: "Administration", count: 7, top_tags: ["fees", "documents"] },
-          { cluster: "Faculty Performance", count: 5, top_tags: ["lectures", "grading"] },
-        ],
-      };
-      setClusterData(response.analytics);
-    };
-
     fetchClusterData();
-  }, []); // Empty dependency array ensures this runs only once
+    fetchGrievances();
+  }, []);
 
-  // Calculate category distribution
-  const categoryData = mockGrievances.reduce((acc, g) => {
-    const existing = acc.find((item) => item.name === g.category);
+  const fetchClusterData = async () => {
+    setIsLoadingClusters(true);
+    try {
+      const response = await getClusterAnalytics();
+      setClusterData(response.analytics);
+    } catch (error) {
+      console.error('Failed to fetch cluster analytics:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load cluster analytics.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingClusters(false);
+    }
+  };
+
+  const fetchGrievances = async () => {
+    try {
+      const response = await getAdminGrievances();
+      setGrievances(response.grievances);
+    } catch (error) {
+      console.error('Failed to fetch grievances:', error);
+    }
+  };
+
+  const fetchAISummary = async () => {
+    setIsLoadingSummary(true);
+    try {
+      const response = await getAISummary();
+      setAiSummary(response.summary);
+    } catch (error) {
+      console.error('Failed to fetch AI summary:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to generate AI summary.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingSummary(false);
+    }
+  };
+
+  // Calculate status distribution from real data
+  const statusData = grievances.reduce((acc: { name: string; value: number }[], g: any) => {
+    const existing = acc.find((item: { name: string; value: number }) => item.name === g.status);
     if (existing) {
       existing.value += 1;
     } else {
-      acc.push({ name: g.category, value: 1 });
+      acc.push({ name: g.status, value: 1 });
     }
     return acc;
   }, [] as { name: string; value: number }[]);
 
-  const resolutionData = [
-    { category: 'Academic', avgDays: 5 },
-    { category: 'Hostel', avgDays: 3 },
-    { category: 'Facilities', avgDays: 4 },
-  ];
+  // Calculate department distribution
+  const departmentData = grievances.reduce((acc: { name: string; value: number }[], g: any) => {
+    const dept = g.assigned_to || 'Unassigned';
+    const existing = acc.find((item: { name: string; value: number }) => item.name === dept);
+    if (existing) {
+      existing.value += 1;
+    } else {
+      acc.push({ name: dept, value: 1 });
+    }
+    return acc;
+  }, [] as { name: string; value: number }[]);
 
   const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
-  const handlePieClick = (data: any) => {
-    setSelectedCategory(data.name);
-  };
-
-  // Filter grievances based on the selected category
-  const categoryGrievances = selectedCategory
-    ? mockGrievances.filter((g) => g.category === selectedCategory)
-    : [];
-
-  // **MODIFIED**: Calculate SUB-CATEGORY distribution for the selected category
-  const subCategoryData = categoryGrievances.reduce((acc, g) => {
-    const existing = acc.find((item) => item.name === g.subCategory);
-    if (existing) {
-      existing.value += 1;
-    } else {
-      acc.push({ name: g.subCategory, value: 1 });
-    }
-    return acc;
-  }, [] as { name: string; value: number }[]);
+  const totalGrievances = grievances.length;
+  const resolvedCount = grievances.filter((g: any) => g.status === 'SOLVED').length;
+  const pendingCount = grievances.filter((g: any) => g.status === 'NEW').length;
+  const resolutionRate = totalGrievances > 0 ? ((resolvedCount / totalGrievances) * 100).toFixed(1) : '0';
 
   return (
     <div className="p-6 space-y-6">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+      {/* Summary Stats */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Total Grievances</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalGrievances}</div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Resolved</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{resolvedCount}</div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{pendingCount}</div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Resolution Rate</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{resolutionRate}%</div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+
+      {/* AI Summary Card */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.5 }}>
         <Card className="backdrop-blur-sm bg-card/80">
           <CardHeader>
-            <CardTitle className="text-2xl">Grievance Overview</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-2xl flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-primary" />
+                AI-Generated Summary
+              </CardTitle>
+              <Button
+                onClick={fetchAISummary}
+                disabled={isLoadingSummary}
+                variant="outline"
+              >
+                {isLoadingSummary ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  'Generate Summary'
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {aiSummary ? (
+              <p className="text-muted-foreground leading-relaxed">{aiSummary}</p>
+            ) : (
+              <p className="text-muted-foreground text-center py-4">
+                Click "Generate Summary" to get AI-powered insights and trends.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Charts Section */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.6 }}>
+        <Card className="backdrop-blur-sm bg-card/80">
+          <CardHeader>
+            <CardTitle className="text-2xl">Grievance Analytics</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-8 md:grid-cols-2">
-            {/* Pie Chart */}
+            {/* Status Distribution Pie Chart */}
             <div>
-              <h3 className="text-lg font-semibold mb-4">Grievances by Category</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={categoryData}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    // ... other props
-                    onClick={handlePieClick}
-                    dataKey="value"
-                    cursor="pointer"
-                  >
-                    {categoryData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-              {/* Category buttons */}
+              <h3 className="text-lg font-semibold mb-4">Grievances by Status</h3>
+              {statusData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={statusData}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      dataKey="value"
+                    >
+                      {statusData.map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                  No data available
+                </div>
+              )}
             </div>
-            {/* Resolution Time Chart */}
+
+            {/* Department Distribution Bar Chart */}
             <div>
-              <h3 className="text-lg font-semibold mb-4">Average Resolution Time (Days)</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={resolutionData}>
-                  {/* ... chart components */}
-                  <Bar dataKey="avgDays" fill="hsl(var(--primary))" name="Avg Days" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <h3 className="text-lg font-semibold mb-4">Grievances by Department</h3>
+              {departmentData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={departmentData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="name" className="text-xs" />
+                    <YAxis allowDecimals={false} className="text-xs" />
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}/>
+                    <Bar dataKey="value" name="Count" radius={[8, 8, 0, 0]}>
+                      {departmentData.map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                  No data available
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
       </motion.div>
 
-      {/* **MODIFIED**: This section now shows a SUB-CATEGORY bar chart */}
-      {selectedCategory && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.1 }}>
-          <Card className="backdrop-blur-sm bg-card/80">
-            <CardHeader>
-              <CardTitle>Sub-Category Breakdown for "{selectedCategory}"</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={subCategoryData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="name" className="text-xs" />
-                  <YAxis allowDecimals={false} className="text-xs" />
-                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}/>
-                  <Bar dataKey="value" name="Count" radius={[8, 8, 0, 0]}>
-                    {subCategoryData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-
-      {/* **NEW**: Cluster Analytics Section */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }}>
+      {/* Cluster Analytics Section */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.7 }}>
         <Card className="backdrop-blur-sm bg-card/80">
           <CardHeader>
             <CardTitle>Grievance Clusters</CardTitle>
             <p className="text-sm text-muted-foreground">Automatically identified grievance clusters from your data.</p>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
+            {isLoadingClusters ? (
+              <div className="text-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                <p className="text-muted-foreground">Loading cluster analytics...</p>
+              </div>
+            ) : clusterData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={clusterData} layout="vertical" margin={{ left: 120 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis type="number" className="text-xs" />
-                  <YAxis dataKey="cluster" type="category" width={80} className="text-xs" />
-                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}/>
+                  <YAxis dataKey="cluster" type="category" width={100} className="text-xs" />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-card border border-border p-3 rounded-lg shadow-lg">
+                            <p className="font-semibold">{data.cluster}</p>
+                            <p className="text-sm">Count: {data.count}</p>
+                            <p className="text-sm">Top tags: {data.top_tags.join(', ')}</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
                   <Bar dataKey="count" name="Grievance Count" radius={[0, 8, 8, 0]}>
-                     {clusterData.map((entry, index) => (
-                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    {clusterData.map((entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Bar>
                 </BarChart>
-            </ResponsiveContainer>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-center text-muted-foreground py-4">
+                No cluster data available yet.
+              </p>
+            )}
           </CardContent>
         </Card>
       </motion.div>
-
     </div>
   );
 }

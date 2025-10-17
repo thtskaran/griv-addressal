@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
-import { Eye, MessageSquare, Star, Send, Loader2 } from 'lucide-react';
+import { Eye, MessageSquare, Star, Send, Loader2, Bot } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import apiClient from '@/lib/apiClient';
 import {
   Select,
   SelectContent,
@@ -31,245 +30,229 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
-
-// Type definition for grievance data from the API
-type Grievance = {
-  id: string;
-  userId: string;
-  title: string;
-  description: string;
-  category: string;
-  status: GrievanceStatus;
-  submittedAt: Date;
-  updatedAt: Date;
-  adminReply: string | null;
-  rating: number | null;
-  feedback: string | null;
-  assignedTo: string | null;
-};
-
-// Type for the status values used in selects and state
-type GrievanceStatus = 'Submitted' | 'In Progress' | 'Resolved' | 'Rejected';
-
-const mockGrievances: Grievance[] = [
-  {
-    id: 'G-001',
-    userId: 'user123',
-    title: 'Wi-Fi not working in Hostel B',
-    description: 'The Wi-Fi has been down for 3 days in the entire B-Block. We are unable to attend online classes or complete assignments.',
-    category: 'IT Services',
-    status: 'In Progress',
-    submittedAt: new Date('2025-10-15T09:00:00Z'),
-    updatedAt: new Date('2025-10-16T11:20:00Z'),
-    adminReply: 'Our IT team is aware of the issue and is working on a fix. Expected resolution time is 24 hours.',
-    rating: null,
-    feedback: null,
-    assignedTo: 'IT Department',
-  },
-  {
-    id: 'G-002',
-    userId: 'user456',
-    title: 'Leaky faucet in washroom',
-    description: 'The faucet on the 2nd floor, left-side washroom has been leaking continuously for a week.',
-    category: 'Maintenance',
-    status: 'Resolved',
-    submittedAt: new Date('2025-10-12T14:30:00Z'),
-    updatedAt: new Date('2025-10-14T17:00:00Z'),
-    adminReply: 'The maintenance team has fixed the faucet.',
-    rating: 5,
-    feedback: 'Excellent and quick service!',
-    assignedTo: 'Maintenance',
-  },
-    {
-    id: 'G-003',
-    userId: 'user789',
-    title: 'Incorrect library book fine',
-    description: 'I was charged a late fine for a book I returned on time. Please check the records.',
-    category: 'Library',
-    status: 'Submitted',
-    submittedAt: new Date('2025-10-17T10:00:00Z'),
-    updatedAt: new Date('2025-10-17T10:00:00Z'),
-    adminReply: null,
-    rating: null,
-    feedback: null,
-    assignedTo: null,
-  },
-   {
-    id: 'G-004',
-    userId: 'user101',
-    title: 'Food quality in mess',
-    description: 'The food quality has deteriorated significantly over the past month.',
-    category: 'Food Services',
-    status: 'Resolved',
-    submittedAt: new Date('2025-09-20T19:00:00Z'),
-    updatedAt: new Date('2025-09-25T12:00:00Z'),
-    adminReply: 'We have spoken with the caterers and implemented stricter quality checks.',
-    rating: 3,
-    feedback: 'It is slightly better now, but can still be improved.',
-    assignedTo: 'Food Services',
-  },
-];
-
+import {
+  getAdminGrievances,
+  updateGrievance,
+  addAdminChatMessage,
+  getGrievanceById,
+  getAISuggestions,
+  type Grievance,
+  type AISuggestionsResponse,
+} from '@/lib/grievancesApi';
 
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
-  const [grievances, setGrievances] = useState<Grievance[]>(mockGrievances);
-  // const [isLoading, setIsLoading] = useState(true);
-  // const [error, setError] = useState<string | null>(null);
+  const [grievances, setGrievances] = useState<Grievance[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
+  const [selectedGrievanceChat, setSelectedGrievanceChat] = useState<any>(null);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
+  const [aiSuggestionsDialogOpen, setAiSuggestionsDialogOpen] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [messageText, setMessageText] = useState('');
-  const [filterRating, setFilterRating] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterAssignedTo, setFilterAssignedTo] = useState('all');
+  const [aiSuggestions, setAiSuggestions] = useState<AISuggestionsResponse | null>(null);
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
   const { toast } = useToast();
 
-  /*
   useEffect(() => {
-    const fetchGrievances = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const response = await fetch('/grievances');
-        if (!response.ok) {
-          throw new Error('Failed to fetch grievances');
-        }
-        const data = await response.json();
-        setGrievances(data);
-      } catch (err) {
-         if (err instanceof Error) {
-            setError(err.message);
-        } else {
-            setError('An unknown error occurred.');
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
     fetchGrievances();
-  }, []);
-  */
+  }, [filterStatus, filterAssignedTo]);
 
-  const handleStatusChange = (grievanceId: string, newStatus: GrievanceStatus) => {
-    setGrievances(
-      grievances.map((g) => (g.id === grievanceId ? { ...g, status: newStatus, updatedAt: new Date() } : g))
-    );
-    toast({
-      title: 'Status Updated',
-      description: `Grievance status changed to ${newStatus}`,
-    });
+  const fetchGrievances = async () => {
+    setIsLoading(true);
+    try {
+      const filters: any = {};
+      if (filterStatus !== 'all') filters.status = filterStatus;
+      if (filterAssignedTo !== 'all') filters.assigned_to = filterAssignedTo;
+
+      const response = await getAdminGrievances(filters);
+      setGrievances(response.grievances);
+    } catch (error) {
+      console.error('Failed to fetch grievances:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch grievances. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleAssign = (grievanceId: string, department: string) => {
-    setGrievances(
-      grievances.map((g) => (g.id === grievanceId ? { ...g, assignedTo: department, updatedAt: new Date() } : g))
-    );
-     toast({
-      title: 'Grievance Assigned',
-      description: `Assigned to ${department}`,
-    });
+  const handleStatusChange = async (grievanceId: number, newStatus: string) => {
+    try {
+      await updateGrievance(grievanceId, { status: newStatus as any });
+      
+      setGrievances(
+        grievances.map((g) =>
+          g.id === grievanceId ? { ...g, status: newStatus as any, updated_at: new Date().toISOString() } : g
+        )
+      );
+      
+      toast({
+        title: 'Status Updated',
+        description: `Grievance status changed to ${newStatus}`,
+      });
+    } catch (error) {
+      console.error('Failed to update status:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update status. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleReply = () => {
+  const handleAssign = async (grievanceId: number, department: string) => {
+    try {
+      await updateGrievance(grievanceId, { assigned_to: department });
+      
+      setGrievances(
+        grievances.map((g) =>
+          g.id === grievanceId ? { ...g, assigned_to: department, updated_at: new Date().toISOString() } : g
+        )
+      );
+      
+      toast({
+        title: 'Grievance Assigned',
+        description: `Assigned to ${department}`,
+      });
+    } catch (error) {
+      console.error('Failed to assign grievance:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to assign grievance. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleReply = async () => {
     if (!selectedGrievance || !replyText.trim()) return;
 
-    setGrievances(
-      grievances.map((g) =>
-        g.id === selectedGrievance.id
-          ? { ...g, adminReply: replyText, status: 'Resolved', updatedAt: new Date() }
-          : g
-      )
-    );
+    try {
+      await addAdminChatMessage(selectedGrievance.id, replyText);
+      
+      // Update status to IN_PROGRESS if it was NEW
+      if (selectedGrievance.status === 'NEW') {
+        await updateGrievance(selectedGrievance.id, { status: 'IN_PROGRESS' });
+      }
 
-    toast({
-      title: 'Reply Sent',
-      description: 'Your reply has been sent to the user.',
-    });
+      toast({
+        title: 'Reply Sent',
+        description: 'Your reply has been sent to the user.',
+      });
 
-    setReplyText('');
-    setReplyDialogOpen(false);
-    setSelectedGrievance(null);
+      setReplyText('');
+      setReplyDialogOpen(false);
+      setSelectedGrievance(null);
+      fetchGrievances(); // Refresh the list
+    } catch (error) {
+      console.error('Failed to send reply:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to send reply. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!selectedGrievance || !messageText.trim()) return;
 
-    toast({
-      title: 'Message Sent',
-      description: 'Your message has been sent to the user.',
-    });
+    try {
+      await addAdminChatMessage(selectedGrievance.id, messageText);
 
-    setMessageText('');
-    setMessageDialogOpen(false);
+      toast({
+        title: 'Message Sent',
+        description: 'Your message has been sent to the user.',
+      });
+
+      setMessageText('');
+      setMessageDialogOpen(false);
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to send message. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleViewChatHistory = () => {
-    setMessageDialogOpen(false);
-    setLocation('/admin/chat-history');
+  const handleViewChatHistory = async (grievance: Grievance) => {
+    try {
+      const response = await getGrievanceById(grievance.id);
+      setSelectedGrievanceChat(response);
+      setLocation(`/admin/chat-history/${grievance.id}`);
+    } catch (error) {
+      console.error('Failed to load chat history:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load chat history.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleLoadAISuggestions = async (grievance: Grievance) => {
+    setSelectedGrievance(grievance);
+    setIsLoadingAI(true);
+    setAiSuggestionsDialogOpen(true);
+
+    try {
+      const suggestions = await getAISuggestions(grievance.id);
+      setAiSuggestions(suggestions);
+    } catch (error) {
+      console.error('Failed to load AI suggestions:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load AI suggestions.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingAI(false);
+    }
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Resolved':
+    switch (status.toUpperCase()) {
+      case 'SOLVED':
         return 'bg-green-500/10 text-green-500 border-green-500/20';
-      case 'In Progress':
+      case 'IN_PROGRESS':
         return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
-      case 'Rejected':
+      case 'REJECTED':
+      case 'DROPPED':
         return 'bg-red-500/10 text-red-500 border-red-500/20';
       default:
         return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
     }
   };
 
-  const filteredGrievances = grievances.filter((g) => {
-    const ratingMatch =
-      filterRating === 'all' ||
-      (filterRating === '4+' && (g.rating || 0) >= 4) ||
-      (filterRating === '3' && (g.rating || 0) === 3) ||
-      (filterRating === '2' && (g.rating || 0) <= 2);
-
-    const statusMatch = filterStatus === 'all' || g.status === filterStatus;
-
-    return ratingMatch && statusMatch;
-  });
-
   const totalGrievances = grievances.length;
-  const resolvedGrievances = grievances.filter((g) => g.status === 'Resolved').length;
-  const pendingGrievances = grievances.filter((g) => g.status === 'Submitted').length;
-  const avgRating =
-    grievances.filter((g) => g.rating).reduce((sum, g) => sum + (g.rating || 0), 0) /
-      grievances.filter((g) => g.rating).length || 0;
+  const resolvedGrievances = grievances.filter((g) => g.status === 'SOLVED').length;
+  const pendingGrievances = grievances.filter((g) => g.status === 'NEW').length;
+  const inProgressGrievances = grievances.filter((g) => g.status === 'IN_PROGRESS').length;
 
   return (
     <div className="p-6 space-y-6">
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Average Rating</CardTitle>
-              <Star className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Total Grievances</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{avgRating.toFixed(1)} / 5.0</div>
-              <p className="text-xs text-muted-foreground mt-1">From resolved grievances</p>
+              <div className="text-2xl font-bold">{totalGrievances}</div>
+              <p className="text-xs text-muted-foreground mt-1">All submitted grievances</p>
             </CardContent>
           </Card>
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Resolved</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{resolvedGrievances}</div>
-              <p className="text-xs text-muted-foreground mt-1">Out of {totalGrievances} total</p>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Pending</CardTitle>
@@ -280,9 +263,33 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
         </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">In Progress</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{inProgressGrievances}</div>
+              <p className="text-xs text-muted-foreground mt-1">Being worked on</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Resolved</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{resolvedGrievances}</div>
+              <p className="text-xs text-muted-foreground mt-1">Successfully solved</p>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
         <Card className="backdrop-blur-sm bg-card/80">
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -294,135 +301,143 @@ export default function AdminDashboard() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="Submitted">Submitted</SelectItem>
-                    <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Resolved">Resolved</SelectItem>
+                    <SelectItem value="NEW">New</SelectItem>
+                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                    <SelectItem value="SOLVED">Solved</SelectItem>
+                    <SelectItem value="REJECTED">Rejected</SelectItem>
+                    <SelectItem value="DROPPED">Dropped</SelectItem>
                   </SelectContent>
                 </Select>
 
-                <Select value={filterRating} onValueChange={setFilterRating}>
-                  <SelectTrigger className="w-[140px]" data-testid="select-filter-rating">
-                    <SelectValue placeholder="Filter by rating" />
+                <Select value={filterAssignedTo} onValueChange={setFilterAssignedTo}>
+                  <SelectTrigger className="w-[140px]" data-testid="select-filter-assigned">
+                    <SelectValue placeholder="Filter by department" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Ratings</SelectItem>
-                    <SelectItem value="4+">4+ Stars</SelectItem>
-                    <SelectItem value="3">3 Stars</SelectItem>
-                    <SelectItem value="2">2 Stars or less</SelectItem>
+                    <SelectItem value="all">All Departments</SelectItem>
+                    <SelectItem value="LIBRARY">Library</SelectItem>
+                    <SelectItem value="HOSTEL">Hostel</SelectItem>
+                    <SelectItem value="ACADEMICS">Academics</SelectItem>
+                    <SelectItem value="IT">IT</SelectItem>
+                    <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
+                    <SelectItem value="OTHERS">Others</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Assigned To</TableHead>
-                    <TableHead>Rating</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredGrievances.map((grievance) => (
-                    <TableRow key={grievance.id} className="hover-elevate">
-                      <TableCell className="font-medium">{grievance.id}</TableCell>
-                      <TableCell>{grievance.title}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{grievance.category}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={grievance.status}
-                          onValueChange={(value) => handleStatusChange(grievance.id, value as GrievanceStatus)}
-                        >
-                          <SelectTrigger className="w-[140px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Submitted">Submitted</SelectItem>
-                            <SelectItem value="In Progress">In Progress</SelectItem>
-                            <SelectItem value="Resolved">Resolved</SelectItem>
-                            <SelectItem value="Rejected">Rejected</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={grievance.assignedTo || 'unassigned'}
-                          onValueChange={(value) => handleAssign(grievance.id, value)}
-                        >
-                          <SelectTrigger className="w-[140px]">
-                            <SelectValue placeholder="Assign" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="IT Department">IT Department</SelectItem>
-                            <SelectItem value="Maintenance">Maintenance</SelectItem>
-                            <SelectItem value="Academic">Academic</SelectItem>
-                            <SelectItem value="Library">Library</SelectItem>
-                            <SelectItem value="Food Services">Food Services</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        {grievance.rating ? (
-                          <div className="flex items-center gap-1">
-                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                            <span>{grievance.rating}</span>
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setSelectedGrievance(grievance)}
-                            data-testid={`button-view-${grievance.id}`}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setSelectedGrievance(grievance);
-                              setReplyDialogOpen(true);
-                            }}
-                            data-testid={`button-reply-${grievance.id}`}
-                          >
-                            <MessageSquare className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setSelectedGrievance(grievance);
-                              setMessageDialogOpen(true);
-                            }}
-                            data-testid={`button-message-${grievance.id}`}
-                          >
-                            <Send className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+            {isLoading ? (
+              <div className="text-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                <p className="text-muted-foreground">Loading grievances...</p>
+              </div>
+            ) : (
+              <div className="rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ID</TableHead>
+                      <TableHead>Title</TableHead>
+                      <TableHead>Tags</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Assigned To</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {grievances.map((grievance) => (
+                      <TableRow key={grievance.id} className="hover-elevate">
+                        <TableCell className="font-medium">{grievance.id}</TableCell>
+                        <TableCell>{grievance.title}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {grievance.issue_tags.slice(0, 2).map(tag => (
+                              <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
+                            ))}
+                            {grievance.issue_tags.length > 2 && (
+                              <Badge variant="secondary" className="text-xs">+{grievance.issue_tags.length - 2}</Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={grievance.status}
+                            onValueChange={(value) => handleStatusChange(grievance.id, value)}
+                          >
+                            <SelectTrigger className="w-[130px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="NEW">New</SelectItem>
+                              <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                              <SelectItem value="SOLVED">Solved</SelectItem>
+                              <SelectItem value="REJECTED">Rejected</SelectItem>
+                              <SelectItem value="DROPPED">Dropped</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={grievance.assigned_to || 'unassigned'}
+                            onValueChange={(value) => handleAssign(grievance.id, value)}
+                          >
+                            <SelectTrigger className="w-[130px]">
+                              <SelectValue placeholder="Assign" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="LIBRARY">Library</SelectItem>
+                              <SelectItem value="HOSTEL">Hostel</SelectItem>
+                              <SelectItem value="ACADEMICS">Academics</SelectItem>
+                              <SelectItem value="IT">IT</SelectItem>
+                              <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
+                              <SelectItem value="OTHERS">Others</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setSelectedGrievance(grievance)}
+                              data-testid={`button-view-${grievance.id}`}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setSelectedGrievance(grievance);
+                                setReplyDialogOpen(true);
+                              }}
+                              data-testid={`button-reply-${grievance.id}`}
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleLoadAISuggestions(grievance)}
+                              data-testid={`button-ai-${grievance.id}`}
+                            >
+                              <Bot className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </motion.div>
 
-      <Dialog open={!!selectedGrievance && !replyDialogOpen && !messageDialogOpen} onOpenChange={() => setSelectedGrievance(null)}>
+      {/* View Details Dialog */}
+      <Dialog open={!!selectedGrievance && !replyDialogOpen && !aiSuggestionsDialogOpen} onOpenChange={() => setSelectedGrievance(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-2xl">{selectedGrievance?.title}</DialogTitle>
@@ -430,48 +445,46 @@ export default function AdminDashboard() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex gap-2">
-              <Badge variant="outline">{selectedGrievance?.category}</Badge>
               <Badge className={getStatusColor(selectedGrievance?.status || '')} variant="outline">
                 {selectedGrievance?.status}
               </Badge>
+              <Badge variant="outline">{selectedGrievance?.assigned_to}</Badge>
             </div>
             <div>
               <h4 className="font-semibold mb-2">Description</h4>
-              <p className="text-muted-foreground">{selectedGrievance?.description}</p>
+              <p className="text-muted-foreground">{selectedGrievance?.description || 'No description provided'}</p>
             </div>
-            {selectedGrievance?.adminReply && (
-              <div className="bg-muted/50 p-4 rounded-lg">
-                <h4 className="font-semibold mb-2">Admin Response</h4>
-                <p className="text-muted-foreground">{selectedGrievance.adminReply}</p>
+            <div>
+              <h4 className="font-semibold mb-2">Tags</h4>
+              <div className="flex flex-wrap gap-2">
+                {selectedGrievance?.issue_tags.map(tag => (
+                  <Badge key={tag} variant="secondary">{tag}</Badge>
+                ))}
               </div>
-            )}
-            {selectedGrievance?.rating && (
+            </div>
+            <div>
+              <h4 className="font-semibold mb-2">Cluster</h4>
+              <p className="text-muted-foreground">{selectedGrievance?.cluster}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <h4 className="font-semibold mb-2">User Rating</h4>
-                <div className="flex items-center gap-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star
-                      key={star}
-                      className={`w-5 h-5 ${
-                        star <= selectedGrievance.rating!
-                          ? 'fill-yellow-400 text-yellow-400'
-                          : 'text-gray-300'
-                      }`}
-                    />
-                  ))}
-                  <span className="ml-2 text-sm text-muted-foreground">
-                    {selectedGrievance.rating} / 5
-                  </span>
-                </div>
-                {selectedGrievance.feedback && (
-                  <p className="text-sm text-muted-foreground mt-2">{selectedGrievance.feedback}</p>
-                )}
+                <h4 className="font-semibold mb-1">Created</h4>
+                <p className="text-muted-foreground">
+                  {selectedGrievance && new Date(selectedGrievance.created_at).toLocaleString()}
+                </p>
               </div>
-            )}
+              <div>
+                <h4 className="font-semibold mb-1">Last Updated</h4>
+                <p className="text-muted-foreground">
+                  {selectedGrievance && new Date(selectedGrievance.updated_at).toLocaleString()}
+                </p>
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
 
+      {/* Reply Dialog */}
       <Dialog open={replyDialogOpen} onOpenChange={setReplyDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -490,37 +503,68 @@ export default function AdminDashboard() {
               Cancel
             </Button>
             <Button onClick={handleReply} data-testid="button-send-reply">
+              <Send className="w-4 h-4 mr-2" />
               Send Reply
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={messageDialogOpen} onOpenChange={setMessageDialogOpen}>
-        <DialogContent>
+      {/* AI Suggestions Dialog */}
+      <Dialog open={aiSuggestionsDialogOpen} onOpenChange={setAiSuggestionsDialogOpen}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Send Message</DialogTitle>
-            <DialogDescription>Send a direct message to the user</DialogDescription>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="w-5 h-5" />
+              AI Suggestions
+            </DialogTitle>
+            <DialogDescription>
+              AI-powered resolution suggestions for Grievance #{selectedGrievance?.id}
+            </DialogDescription>
           </DialogHeader>
-          <Textarea
-            placeholder="Type your message here..."
-            value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
-            rows={6}
-            data-testid="textarea-admin-message"
-          />
-          <DialogFooter className="flex gap-2">
-            <Button onClick={handleSendMessage} data-testid="button-send-message">
-              <Send className="w-4 h-4 mr-2" />
-              Send
-            </Button>
-            <Button variant="outline" onClick={handleViewChatHistory} data-testid="button-view-chat-history">
-              View Chat History
-            </Button>
-          </DialogFooter>
+          <div className="space-y-4">
+            {isLoadingAI ? (
+              <div className="text-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                <p className="text-muted-foreground">Loading AI suggestions...</p>
+              </div>
+            ) : aiSuggestions && aiSuggestions.suggestions.length > 0 ? (
+              <>
+                {aiSuggestions.suggestions.map((suggestion, index) => (
+                  <div key={index} className="p-4 border rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Badge variant="outline">
+                        {Math.round(suggestion.confidence * 100)}% confidence
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        Source: {suggestion.source.doc_id}
+                      </span>
+                    </div>
+                    <p className="text-sm">{suggestion.summary}</p>
+                  </div>
+                ))}
+                {aiSuggestions.related_grievances.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="font-semibold mb-2">Related Grievances</h4>
+                    <div className="space-y-2">
+                      {aiSuggestions.related_grievances.map((related) => (
+                        <div key={related.id} className="flex items-center justify-between text-sm p-2 bg-muted rounded">
+                          <span>#{related.id}: {related.title}</span>
+                          <Badge variant="secondary">{related.status}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-center text-muted-foreground py-4">
+                No AI suggestions available for this grievance.
+              </p>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
   );
 }
-
