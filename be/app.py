@@ -110,22 +110,37 @@ def create_app() -> Flask:
 
     @app.route("/grievances", methods=["GET"])
     def list_grievances():
-        student_id = request.args.get("student_id", type=int)
+        requested_student_id = request.args.get("student_id", type=int)
         with session_scope() as session:
-            if student_id is not None:
-                student = session.query(Student).filter(Student.id == student_id).first()
-                if not student:
-                    student = get_or_create_default_student(session)
-                    student_id = student.id
-            else:
-                student = get_or_create_default_student(session)
-                student_id = student.id
-            items = (
+            default_student = get_or_create_default_student(session)
+            target_student_id = default_student.id
+
+            if requested_student_id is not None:
+                student = session.query(Student).filter(Student.id == requested_student_id).first()
+                if student:
+                    target_student_id = student.id
+                else:
+                    target_student_id = default_student.id
+
+            query = (
                 session.query(Grievance)
-                .filter(Grievance.student_id == student_id)
+                .filter(Grievance.student_id == target_student_id)
                 .order_by(Grievance.created_at.desc())
-                .all()
             )
+            items = query.all()
+
+            if (
+                requested_student_id is not None
+                and not items
+                and target_student_id != default_student.id
+            ):
+                items = (
+                    session.query(Grievance)
+                    .filter(Grievance.student_id == default_student.id)
+                    .order_by(Grievance.created_at.desc())
+                    .all()
+                )
+
             return jsonify({"grievances": [serialize_grievance(item) for item in items]})
 
     @app.route("/grievances/<int:grievance_id>", methods=["GET"])
