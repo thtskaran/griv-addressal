@@ -10,7 +10,7 @@ import { motion } from 'framer-motion';
 
 export default function UserProfile() {
   const [profileData, setProfileData] = useState({
-    name: 'John Doe',
+    name: 'Aman jha',
     email: 'john.doe@university.edu',
     phone: '+1 234 567 8900',
     studentId: 'STU2025001',

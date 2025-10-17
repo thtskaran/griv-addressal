@@ -37,7 +37,7 @@ export default function Header() {
     setLocation('/login');
   };
 
-  const displayName = isAnonymous ? 'Anonymous User' : userRole === 'admin' ? 'Admin User' : 'John Doe';
+  const displayName = isAnonymous ? 'Anonymous User' : userRole === 'admin' ? 'Admin User' : 'Aman jha';
   const displayEmail = isAnonymous ? 'anonymous@system.local' : userRole === 'admin' ? 'admin@grievance.edu' : 'john.doe@university.edu';
 
   return (
@@ -69,21 +69,23 @@ export default function Header() {
           >
             {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </Button>
+           {userRole === 'user' && (
+  <Button
+    size="icon"
+    variant="ghost"
+    className="relative"
+    onClick={() => setLocation(`/${userRole}/notifications`)}
+    data-testid="button-notifications"
+  >
+    <Bell className="w-5 h-5" />
+    {unreadCount > 0 && (
+      <span className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full text-xs flex items-center justify-center">
+        {unreadCount}
+      </span>
+    )}
+  </Button>
+)}
 
-          <Button
-            size="icon"
-            variant="ghost"
-            className="relative"
-            onClick={() => setLocation(`/${userRole}/notifications`)}
-            data-testid="button-notifications"
-          >
-            <Bell className="w-5 h-5" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full text-xs flex items-center justify-center">
-                {unreadCount}
-              </span>
-            )}
-          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

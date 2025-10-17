@@ -16,13 +16,16 @@ const adminMenuItems = [
   { icon: Home, label: 'Dashboard', path: '/admin/dashboard' },
   { icon: BarChart3, label: 'Analytics', path: '/admin/analytics' },
   { icon: FolderOpen, label: 'Google Drive', path: '/admin/google-drive' },
+      { icon: Book, label: 'Hostel Rules', path: '/hostel-rules' },
+  { icon: GraduationCap, label: 'Exam Details', path: '/exam-details' },
   { icon: UserIcon, label: 'Profile', path: '/admin/profile' },
+
 ];
 
-const sharedMenuItems = [
-  { icon: Book, label: 'Hostel Rules', path: '/hostel-rules' },
-  { icon: GraduationCap, label: 'Exam Details', path: '/exam-details' },
-];
+// const sharedMenuItems = [
+//   { icon: Book, label: 'Hostel Rules', path: '/hostel-rules' },
+//   { icon: GraduationCap, label: 'Exam Details', path: '/exam-details' },
+// ];
 
 export default function Sidebar() {
   const [location, setLocation] = useLocation();
@@ -56,8 +59,7 @@ export default function Sidebar() {
         <Separator className="my-4" />
 
         <div className="space-y-1">
-          <p className="text-xs font-semibold text-muted-foreground px-3 py-2">Resources</p>
-          {sharedMenuItems.map((item) => {
+          {/* {sharedMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location === item.path;
             
@@ -73,7 +75,7 @@ export default function Sidebar() {
                 {item.label}
               </Button>
             );
-          })}
+          })} */}
         </div>
       </nav>
     </aside>

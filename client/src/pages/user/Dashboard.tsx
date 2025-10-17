@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Plus, Star } from "lucide-react";
+
 import {
   Table,
   TableBody,
@@ -25,11 +27,15 @@ import { mockGrievances, type Grievance } from '@/lib/data';
 import { useRecoilState } from 'recoil';
 import { isAnonymousAtom } from '@/lib/atoms';
 import { motion } from 'framer-motion';
+import { useLocation } from 'wouter';
+
 
 export default function UserDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
   const [isAnonymous, setIsAnonymous] = useRecoilState(isAnonymousAtom);
+    const [, setLocation] = useLocation();
+  
 
   // todo: remove mock functionality - Filter for current user's grievances
   const userGrievances = mockGrievances.filter(g => g.userId === 'user123');
@@ -62,23 +68,37 @@ export default function UserDashboard() {
       >
         <Card className="backdrop-blur-sm bg-card/80">
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-2xl">My Grievances</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">Track and manage your submitted grievances</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <Label htmlFor="anonymous-mode" className="text-sm font-medium">
-                  Anonymous Mode
-                </Label>
-                <Switch
-                  id="anonymous-mode"
-                  checked={isAnonymous}
-                  onCheckedChange={setIsAnonymous}
-                  data-testid="switch-anonymous-mode"
-                />
-              </div>
-            </div>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+  <div>
+    <CardTitle className="text-2xl">My Grievances</CardTitle>
+    <p className="text-sm text-muted-foreground mt-1">
+      Track and manage your submitted grievances
+    </p>
+  </div>
+
+  <div className="flex items-center gap-4 ml-auto">
+    <div className="flex items-center gap-2">
+      <Label htmlFor="anonymous-mode" className="text-sm font-medium">
+        Anonymous Mode
+      </Label>
+      <Switch
+        id="anonymous-mode"
+        checked={isAnonymous}
+        onCheckedChange={setIsAnonymous}
+        data-testid="switch-anonymous-mode"
+      />
+    </div>
+
+    <Button
+      onClick={() => setLocation('/user/submit-grievance')}
+      data-testid="button-submit-new"
+    >
+      <Plus className="w-4 h-4 mr-2" />
+      Submit New
+    </Button>
+  </div>
+</div>
+
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="relative">
@@ -100,6 +120,7 @@ export default function UserDashboard() {
                     <TableHead>Title</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Rating</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -116,6 +137,17 @@ export default function UserDashboard() {
                           {grievance.status}
                         </Badge>
                       </TableCell>
+                        <TableCell>
+                          {grievance.rating ? (
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: grievance.rating }).map((_, i) => (
+                                <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">Not rated</span>
+                          )}
+                        </TableCell>
                       <TableCell>
                         <Button
                           size="sm"

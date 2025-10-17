@@ -72,7 +72,7 @@ export default function ChatHistory() {
         <Card className="max-w-5xl mx-auto backdrop-blur-sm bg-card/80">
           <CardHeader>
             <CardTitle className="text-2xl">Chat History - User: John Doe</CardTitle>
-            <p className="text-sm text-muted-foreground">Grievance ID: G001</p>
+            <p className="text-sm text-muted-foreground">Ticket ID: T001</p>
           </CardHeader>
           <CardContent className="space-y-4">
             <ScrollArea className="h-[500px] pr-4">
