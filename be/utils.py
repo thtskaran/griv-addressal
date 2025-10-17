@@ -43,6 +43,11 @@ except ImportError:  # pragma: no cover
     HttpError = None
     MediaIoBaseDownload = None
 
+try:
+    from PyPDF2 import PdfReader  # type: ignore
+except ImportError:  # pragma: no cover
+    PdfReader = None
+
 logger = logging.getLogger("grievance.backend")
 
 
@@ -586,6 +591,24 @@ class KnowledgeBaseIngestor:
 
         try:
             logger.debug("Attempting download for %s (mime=%s)", file_name, mime_type)
+            
+            # Handle PDF files
+            if mime_type == "application/pdf":
+                logger.debug("Downloading PDF file as binary")
+                request = drive.files().get_media(fileId=file_id)
+                buffer = io.BytesIO()
+                downloader = MediaIoBaseDownload(buffer, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+                    if status:
+                        logger.debug("Download progress for %s: %d%%", file_name, int(status.progress() * 100))
+                
+                buffer.seek(0)
+                logger.debug("Download complete for %s, extracting text from PDF...", file_name)
+                return self._extract_text_from_pdf(buffer, file_name)
+            
+            # Handle Google Docs exports
             if mime_type == "application/vnd.google-apps.document":
                 logger.debug("Exporting Google Doc as text/plain")
                 request = drive.files().export_media(fileId=file_id, mimeType="text/plain")
@@ -628,6 +651,30 @@ class KnowledgeBaseIngestor:
                 return content
         except HttpError as exc:
             logger.warning("Failed to download Drive file %s: %s", file_id, exc)
+            return None
+
+    def _extract_text_from_pdf(self, pdf_buffer: io.BytesIO, file_name: str) -> Optional[str]:
+        """Extract text content from a PDF file buffer."""
+        if PdfReader is None:
+            logger.error("PyPDF2 is not installed, cannot extract PDF text from %s", file_name)
+            return None
+        
+        try:
+            reader = PdfReader(pdf_buffer)
+            text_parts = []
+            
+            for page_num, page in enumerate(reader.pages, 1):
+                logger.debug("Extracting text from page %d of %s", page_num, file_name)
+                page_text = page.extract_text()
+                if page_text:
+                    text_parts.append(page_text)
+            
+            full_text = "\n\n".join(text_parts)
+            logger.info("Successfully extracted %d characters from %d pages of PDF: %s", 
+                       len(full_text), len(reader.pages), file_name)
+            return full_text
+        except Exception as exc:
+            logger.error("Failed to extract text from PDF %s: %s", file_name, exc, exc_info=True)
             return None
 
     def _chunk_text(self, text: str, chunk_size: int = 800, overlap: int = 100) -> List[str]:
