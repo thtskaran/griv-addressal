@@ -297,6 +297,41 @@ class MongoRepository:
         upserted = self.bulk_upsert_kb_chunks(chunks)
         return {"deleted": deleted, "upserted": upserted}
 
+    def search_similar_chunks(self, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
+        """
+        Search for similar KB chunks using cosine similarity with the query embedding.
+        Returns top_k most similar chunks.
+        """
+        # Fetch all KB chunks with embeddings
+        all_chunks = list(self.kb_chunks.find({"type": "kb_chunk", "embedding": {"$exists": True}}))
+        
+        if not all_chunks:
+            logger.warning("No KB chunks with embeddings found")
+            return []
+        
+        # Calculate cosine similarity for each chunk
+        similarities = []
+        for chunk in all_chunks:
+            chunk_embedding = chunk.get("embedding", [])
+            if not chunk_embedding:
+                continue
+            
+            # Cosine similarity calculation
+            dot_product = sum(a * b for a, b in zip(query_embedding, chunk_embedding))
+            magnitude_query = sum(a * a for a in query_embedding) ** 0.5
+            magnitude_chunk = sum(b * b for b in chunk_embedding) ** 0.5
+            
+            if magnitude_query > 0 and magnitude_chunk > 0:
+                similarity = dot_product / (magnitude_query * magnitude_chunk)
+                similarities.append({
+                    **chunk,
+                    "score": similarity
+                })
+        
+        # Sort by similarity score (descending) and return top_k
+        similarities.sort(key=lambda x: x["score"], reverse=True)
+        return _stringify_object_ids(similarities[:top_k])
+
 
 class KnowledgeBaseIngestor:
     def __init__(self):
@@ -845,6 +880,71 @@ def summarize_for_admin(grievances: List[Dict[str, Any]]) -> str:
 def embed_text(text: str) -> List[float]:
     facade = OpenAIClientFacade()
     return facade.generate_embedding(text)
+
+
+def generate_tags_with_ai(title: str, description: str) -> List[str]:
+    """
+    Generate relevant tags for a grievance using OpenAI based on title and description.
+    Returns a list of tag strings.
+    """
+    facade = OpenAIClientFacade()
+    if not facade.client:
+        logger.warning("OpenAI client not configured, returning default tags")
+        return ["general", "unclassified"]
+    
+    prompt = f"""Analyze the following grievance and generate 3-5 relevant tags that categorize the issue.
+Tags should be lowercase, single words or short phrases (2-3 words max), separated by commas.
+Focus on: issue type, department, urgency, and specific problem area.
+
+Title: {title}
+Description: {description}
+
+Return only the tags as a comma-separated list, nothing else."""
+
+    try:
+        completion = facade.client.chat.completions.create(
+            model=facade.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=100,
+            temperature=0.3,
+        )
+        tags_str = completion.choices[0].message.content.strip()
+        # Parse comma-separated tags and clean them
+        tags = [tag.strip().lower() for tag in tags_str.split(",") if tag.strip()]
+        logger.info(f"Generated {len(tags)} tags using OpenAI: {tags}")
+        return tags[:5]  # Limit to 5 tags max
+    except Exception as e:
+        logger.error(f"Error generating tags with OpenAI: {e}")
+        return ["general", "unclassified"]
+
+
+def get_kb_suggestions_for_grievance(description: str, top_k: int = 3) -> List[Dict[str, Any]]:
+    """
+    Get knowledge base suggestions by finding similar chunks based on the grievance description.
+    Returns a list of relevant KB chunks with excerpts.
+    """
+    try:
+        # Generate embedding for the description
+        embedding = embed_text(description)
+        
+        # Search for similar chunks in MongoDB
+        repo = MongoRepository()
+        similar_chunks = repo.search_similar_chunks(embedding, top_k=top_k)
+        
+        suggestions = []
+        for chunk in similar_chunks:
+            suggestions.append({
+                "doc_name": chunk.get("doc_name", "Unknown Document"),
+                "excerpt": chunk.get("text", "")[:300],  # First 300 chars
+                "similarity_score": chunk.get("score", 0.0),
+                "chunk_id": str(chunk.get("_id", "")),
+            })
+        
+        logger.info(f"Found {len(suggestions)} KB suggestions for grievance")
+        return suggestions
+    except Exception as e:
+        logger.error(f"Error getting KB suggestions: {e}")
+        return []
 
 
 def generate_ai_suggestions(

@@ -46,9 +46,13 @@ export interface NewGrievanceData {
   title: string;
   description?: string;
   issue_tags?: string[];
+  tags?: string[];
   cluster?: string;
   cluster_tags?: string[];
   documents?: Document[];
+  status?: 'NEW' | 'IN_PROGRESS' | 'SOLVED' | 'REJECTED' | 'DROPPED';
+  assigned_to?: string;
+  preview?: boolean;
 }
 
 export interface UpdateGrievanceData {

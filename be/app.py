@@ -45,6 +45,23 @@ def ensure_list(value: Any):
     return [value]
 
 
+def parse_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+        return default
+    if isinstance(value, (int, float)):
+        return value != 0
+    return default
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.update(settings.as_flask_config())
@@ -88,67 +105,163 @@ def create_app() -> Flask:
 
     @app.route("/grievances", methods=["POST"])
     def create_grievance():
-        payload = request.get_json(force=True)
-        title = payload.get("title") or "Untitled Grievance"
-        description = payload.get("description") or payload.get("details") or ""
+        payload = request.get_json() or {}
+        title = payload.get("title", "Untitled")
+        description = payload.get("description", "")
+        preview_mode = parse_bool(payload.get("preview"), False)
+        app.logger.info(
+            "create_grievance: received submission preview=%s title=%r desc_len=%d payload_keys=%s",
+            preview_mode,
+            title,
+            len(description or ""),
+            sorted(payload.keys()),
+        )
+        
         if not description:
-            description = "No description provided."
+            app.logger.warning("create_grievance: missing description, rejecting request")
+            return error_response("Description is required", 400)
 
         status = parse_status(payload.get("status"), default=GrievanceStatus.NEW)
         if status is None:
+            app.logger.warning("create_grievance: invalid status provided: %r", payload.get("status"))
             return error_response("Invalid status value", 400)
 
         assigned = parse_department(payload.get("assigned_to"), default=Department.OTHERS)
         if assigned is None:
+            app.logger.warning("create_grievance: invalid department provided: %r", payload.get("assigned_to"))
             return error_response("Invalid assigned_to value", 400)
 
+        # Get issue_tags from payload or generate with AI
         issue_tags = ensure_list(first_present(payload, ("category_tags", "issue_tags", "tags")))
+        if not issue_tags or preview_mode:
+            # Generate tags using AI
+            from utils import generate_tags_with_ai
+            app.logger.info(
+                "create_grievance: invoking AI tag generation (preview=%s existing_tags=%s)",
+                preview_mode,
+                issue_tags,
+            )
+            generated_tags = generate_tags_with_ai(title, description)
+            app.logger.info(
+                "create_grievance: AI tag generation completed generated=%s", generated_tags
+            )
+            issue_tags = generated_tags if not issue_tags else issue_tags
+        
         cluster_label = payload.get("cluster")
         cluster_tags = ensure_list(first_present(payload, ("cluster_tags", "clusters")))
         if not cluster_tags and cluster_label:
             cluster_tags = [cluster_label]
 
-        with session_scope() as session:
-            student = get_or_create_default_student(session)
-            grievance = Grievance(
-                student_id=student.id,
-                title=title,
-                description=description,
-                status=status,
-                assigned_to=assigned,
-                tags=issue_tags,
-                cluster=cluster_label,
-                cluster_tags=cluster_tags,
+        # If preview mode, return tags and KB suggestions without saving
+        if preview_mode:
+            from utils import get_kb_suggestions_for_grievance
+            app.logger.info(
+                "create_grievance: preview mode active title=%r tags=%s cluster=%r",
+                title,
+                issue_tags,
+                cluster_label,
             )
-            session.add(grievance)
-            session.flush()
+            kb_suggestions = get_kb_suggestions_for_grievance(description, top_k=3)
+            app.logger.info(
+                "create_grievance: preview completed suggestions=%d",
+                len(kb_suggestions),
+            )
+            
+            return jsonify({
+                "preview": True,
+                "grievance": {
+                    "title": title,
+                    "description": description,
+                    "status": status.value,
+                    "assigned_to": assigned.value,
+                    "tags": issue_tags,
+                    "cluster": cluster_label,
+                    "cluster_tags": cluster_tags,
+                },
+                "ai_generated_tags": issue_tags,
+                "kb_suggestions": kb_suggestions,
+                "documents": payload.get("documents", [])
+            })
 
-            documents = payload.get("documents", [])
-            if documents:
-                try:
-                    urls = upload_documents_to_s3(grievance.id, documents)
-                    grievance.s3_doc_urls = urls
-                except RuntimeError as exc:
-                    app.logger.warning("S3 upload failed: %s", exc)
-
-            try:
-                embedding = embed_text(grievance.description)
-                persist_embedding(
-                    grievance.id,
-                    embedding,
-                    {
-                        "tags": grievance.tags,
-                        "issue_tags": grievance.tags,
-                        "cluster": grievance.cluster,
-                        "cluster_tags": grievance.cluster_tags or [],
-                        "student_id": grievance.student_id,
-                    },
+        # Normal mode: Save grievance to database
+        try:
+            with session_scope() as session:
+                student = get_or_create_default_student(session)
+                grievance = Grievance(
+                    student_id=student.id,
+                    title=title,
+                    description=description,
+                    status=status,
+                    assigned_to=assigned,
+                    tags=issue_tags,
+                    cluster=cluster_label,
+                    cluster_tags=cluster_tags,
                 )
-            except RuntimeError as exc:
-                app.logger.warning("Embedding persistence skipped: %s", exc)
+                session.add(grievance)
+                session.flush()
+                app.logger.info(
+                    "create_grievance: grievance persisted id=%s student_id=%s status=%s assigned_to=%s",
+                    grievance.id,
+                    grievance.student_id,
+                    grievance.status.value if grievance.status else None,
+                    grievance.assigned_to.value if grievance.assigned_to else None,
+                )
 
-            session.add(grievance)
-            return jsonify({"grievance": serialize_grievance(grievance)})
+                documents = payload.get("documents", [])
+                if documents:
+                    app.logger.info(
+                        "create_grievance[%s]: uploading %d documents", grievance.id, len(documents)
+                    )
+                    try:
+                        urls = upload_documents_to_s3(grievance.id, documents)
+                        grievance.s3_doc_urls = urls
+                        app.logger.info(
+                            "create_grievance[%s]: uploaded documents urls=%s", grievance.id, urls
+                        )
+                    except RuntimeError as exc:
+                        app.logger.warning("create_grievance[%s]: S3 upload failed: %s", grievance.id, exc)
+
+                try:
+                    app.logger.info("create_grievance[%s]: generating embedding", grievance.id)
+                    embedding = embed_text(grievance.description)
+                    app.logger.info(
+                        "create_grievance[%s]: embedding generated dimensions=%d",
+                        grievance.id,
+                        len(embedding),
+                    )
+                    persist_embedding(
+                        grievance.id,
+                        embedding,
+                        {
+                            "tags": grievance.tags,
+                            "issue_tags": grievance.tags,
+                            "cluster": grievance.cluster,
+                            "cluster_tags": grievance.cluster_tags or [],
+                            "student_id": grievance.student_id,
+                        },
+                    )
+                    app.logger.info(
+                        "create_grievance[%s]: embedding persisted to vector store", grievance.id
+                    )
+                except RuntimeError as exc:
+                    app.logger.warning(
+                        "create_grievance[%s]: embedding persistence skipped: %s",
+                        grievance.id,
+                        exc,
+                    )
+
+                session.add(grievance)
+                serialized = serialize_grievance(grievance)
+                app.logger.info(
+                    "create_grievance[%s]: completed successfully tags=%s cluster=%r",
+                    grievance.id,
+                    serialized.get("tags"),
+                    serialized.get("cluster"),
+                )
+                return jsonify({"grievance": serialized})
+        except Exception as exc:
+            app.logger.exception("create_grievance: unexpected failure processing submission")
+            return error_response("Failed to create grievance", 500)
 
     @app.route("/grievances", methods=["GET"])
     def list_grievances():
@@ -170,6 +283,12 @@ def create_app() -> Flask:
                 .order_by(Grievance.created_at.desc())
             )
             items = query.all()
+            app.logger.info(
+                "list_grievances: student_id=%s returned=%d requested_student_id=%s",
+                target_student_id,
+                len(items),
+                requested_student_id,
+            )
 
             if (
                 requested_student_id is not None

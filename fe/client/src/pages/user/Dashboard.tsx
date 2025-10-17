@@ -32,9 +32,9 @@ import { useToast } from '@/hooks/use-toast';
 
 // Interface for a single chat message
 interface ChatMessage {
-  role: 'student' | 'admin';
-  message: string;
-  timestamp: string;
+    role: 'student' | 'admin';
+    message: string;
+    timestamp: string;
 }
 
 // Updated interface to include description, docs, and chat history
@@ -49,7 +49,7 @@ interface APIGrievance {
   tags: string[];
   s3_doc_urls?: string[];
   chat?: ChatMessage[];
-  rating?: number; // Added rating property
+  rating?: number;
 }
 
 export default function UserDashboard() {
@@ -68,7 +68,7 @@ export default function UserDashboard() {
   // Scroll to the bottom of chat history
   useEffect(() => {
     if (chatGrievance && chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [chatGrievance, chatGrievance?.chat]);
 
@@ -76,94 +76,6 @@ export default function UserDashboard() {
   useEffect(() => {
     const fetchGrievances = async () => {
       try {
-<<<<<<< HEAD
-        const mockData: APIGrievance[] = [
-          {
-            id: 123,
-            title: 'Library AC not working',
-            description:
-              "The air conditioning in the central library's main reading hall has been non-functional for the past three days. It's becoming very difficult for students to study.",
-            status: 'IN_PROGRESS',
-            assigned_to: 'Maintenance Dept',
-            tags: ['library', 'ac_issue', 'infrastructure'],
-            cluster: 'Infrastructure > Library',
-            created_at: '2025-10-16T21:54:32Z',
-            s3_doc_urls: [],
-            chat: [
-              {
-                role: 'admin',
-                message:
-                  'Your grievance has been received and assigned to the maintenance department.',
-                timestamp: '2025-10-17T08:30:00Z',
-              },
-              {
-                role: 'student',
-                message: 'Thank you. Could I get an estimated time for the fix?',
-                timestamp: '2025-10-17T09:15:22Z',
-              },
-              {
-                role: 'admin',
-                message:
-                  'We have dispatched a team. They should be inspecting the unit within the next 2 hours. We will update you post-inspection.',
-                timestamp: '2025-10-17T09:45:10Z',
-              },
-            ],
-          },
-          {
-            id: 124,
-            title: 'Mess food quality is poor',
-            description:
-              'The quality of food served in the mess for dinner has been consistently bad. The rice is often undercooked and the curries are watery.',
-            status: 'SOLVED',
-            assigned_to: 'Mess Committee',
-            tags: ['mess', 'hygiene', 'food'],
-            cluster: 'Hostel Affairs > Mess',
-            created_at: '2025-10-01T17:44:11Z',
-            chat: [
-              {
-                role: 'admin',
-                message: 'We are looking into this with high priority.',
-                timestamp: '2025-10-02T11:00:00Z',
-              },
-            ],
-            rating: 4,
-          },
-          {
-            id: 125,
-            title: 'Wi-Fi not working in Hostel Block C',
-            description:
-              'Internet connectivity in Hostel Block C has been down for over 24 hours. We are unable to attend online classes.',
-            status: 'NEW',
-            assigned_to: 'IT Department',
-            tags: ['wifi', 'hostel', 'internet'],
-            cluster: 'IT Services > Hostel Network',
-            created_at: '2025-10-17T09:30:00Z',
-            chat: [],
-          },
-          {
-            id: 126,
-            title: 'Course registration portal is down',
-            description:
-              'The student portal for course registration is showing a 500 error page. The deadline is tomorrow.',
-            status: 'REJECTED',
-            assigned_to: 'Academics Office',
-            tags: ['portal', 'academics', 'registration'],
-            cluster: 'Academics > Student Portal',
-            created_at: '2025-09-28T11:00:00Z',
-            chat: [
-              {
-                role: 'admin',
-                message:
-                  'The registration deadline was extended by 3 days. This issue is now resolved.',
-                timestamp: '2025-09-28T12:00:00Z',
-              },
-            ],
-          },
-        ];
-        setGrievances(mockData);
-      } catch (err) {
-        console.error('Error fetching grievances:', err);
-=======
         const response = await getGrievances();
         setGrievances(response.grievances.map(g => ({
           id: g.id,
@@ -184,15 +96,11 @@ export default function UserDashboard() {
           description: 'Failed to fetch grievances. Please try again.',
           variant: 'destructive',
         });
->>>>>>> 31c9ec0 (api integrations)
       } finally {
         setLoading(false);
       }
     };
     fetchGrievances();
-<<<<<<< HEAD
-  }, []);
-=======
   }, [toast]);
 
   // ✅ Load chat history when opening chat dialog
@@ -212,37 +120,10 @@ export default function UserDashboard() {
       });
     }
   };
->>>>>>> 31c9ec0 (api integrations)
 
   // ✅ Handle sending a new message
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !chatGrievance) return;
-<<<<<<< HEAD
-    const messagePayload = {
-      role: 'student',
-      message: newMessage,
-    };
-
-    try {
-      const newChatMessage: ChatMessage = {
-        ...messagePayload,
-        timestamp: new Date().toISOString(),
-      };
-
-      const updatedGrievances = grievances.map((g) => {
-        if (g.id === chatGrievance.id) {
-          return { ...g, chat: [...(g.chat || []), newChatMessage] };
-        }
-        return g;
-      });
-      setGrievances(updatedGrievances);
-      setChatGrievance((prev) =>
-        prev ? { ...prev, chat: [...(prev.chat || []), newChatMessage] } : null
-      );
-      setNewMessage('');
-    } catch (error) {
-      console.error('Failed to send message:', error);
-=======
 
     try {
       const response = await addStudentChatMessage(chatGrievance.id, newMessage);
@@ -271,35 +152,14 @@ export default function UserDashboard() {
         description: 'Failed to send message. Please try again.',
         variant: 'destructive',
       });
->>>>>>> 31c9ec0 (api integrations)
     }
   };
-
-  // ✅ Handle grievance rating (with optional API call)
-  const handleRating = async (rating: number) => {
+  
+  // ✅ Handle grievance rating
+  const handleRating = (rating: number) => {
     if (!selectedGrievance) return;
-    try {
-      // Optional: API call to persist rating in backend
-      /*
-      const response = await fetch(`/api/grievances/${selectedGrievance.id}/rate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rating }),
-      });
-      if (!response.ok) throw new Error('Failed to submit rating');
-      */
-
-      // Update local state for instant feedback
-      const updatedGrievances = grievances.map((g) =>
+    const updatedGrievances = grievances.map(g =>
         g.id === selectedGrievance.id ? { ...g, rating } : g
-<<<<<<< HEAD
-      );
-      setGrievances(updatedGrievances);
-      setSelectedGrievance((prev) => (prev ? { ...prev, rating } : null));
-    } catch (error) {
-      console.error('Rating submission failed:', error);
-    }
-=======
     );
     setGrievances(updatedGrievances);
     setSelectedGrievance(prev => prev ? { ...prev, rating } : null);
@@ -308,7 +168,6 @@ export default function UserDashboard() {
       title: 'Rating Submitted',
       description: `You rated this grievance ${rating} stars.`,
     });
->>>>>>> 31c9ec0 (api integrations)
   };
 
   // ✅ Filter grievances (updated to include tags)
@@ -316,11 +175,7 @@ export default function UserDashboard() {
     (g) =>
       g.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       g.cluster.toLowerCase().includes(searchQuery.toLowerCase()) ||
-<<<<<<< HEAD
-      g.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-=======
       g.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
->>>>>>> 31c9ec0 (api integrations)
   );
 
   // ✅ Status badge colors
@@ -332,10 +187,7 @@ export default function UserDashboard() {
       case 'IN_PROGRESS':
         return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
       case 'REJECTED':
-<<<<<<< HEAD
-=======
       case 'DROPPED':
->>>>>>> 31c9ec0 (api integrations)
         return 'bg-red-500/10 text-red-500 border-red-500/20';
       default:
         return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
@@ -391,19 +243,9 @@ export default function UserDashboard() {
             </div>
 
             {loading ? (
-<<<<<<< HEAD
-              <p className="text-center text-muted-foreground py-6">
-                Loading grievances...
-              </p>
-            ) : filteredGrievances.length === 0 ? (
-              <p className="text-center text-muted-foreground py-6">
-                No grievances found.
-              </p>
-=======
               <p className="text-center text-muted-foreground py-6">Loading grievances...</p>
             ) : filteredGrievances.length === 0 ? (
               <p className="text-center text-muted-foreground py-6">No grievances found.</p>
->>>>>>> 31c9ec0 (api integrations)
             ) : (
               <div className="rounded-lg border">
                 <Table>
@@ -429,10 +271,8 @@ export default function UserDashboard() {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {g.tags.map((tag) => (
-                              <Badge key={tag} variant="secondary">
-                                {tag}
-                              </Badge>
+                            {g.tags.map(tag => (
+                               <Badge key={tag} variant="secondary">{tag}</Badge>
                             ))}
                           </div>
                         </TableCell>
@@ -440,25 +280,10 @@ export default function UserDashboard() {
                           <Badge variant="outline">{g.assigned_to}</Badge>
                         </TableCell>
                         <TableCell className="flex items-center gap-1">
-<<<<<<< HEAD
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setSelectedGrievance(g)}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setChatGrievance(g)}
-                          >
-=======
                           <Button size="sm" variant="ghost" onClick={() => setSelectedGrievance(g)}>
                             <Eye className="w-4 h-4" />
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => handleOpenChat(g)}>
->>>>>>> 31c9ec0 (api integrations)
                             <MessageSquare className="w-4 h-4" />
                           </Button>
                         </TableCell>
@@ -477,50 +302,32 @@ export default function UserDashboard() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-2xl">{selectedGrievance?.title}</DialogTitle>
-<<<<<<< HEAD
-            <DialogDescription>Grievance ID: {selectedGrievance?.id}</DialogDescription>
-=======
             <DialogDescription>
               Grievance ID: {selectedGrievance?.id}
             </DialogDescription>
->>>>>>> 31c9ec0 (api integrations)
           </DialogHeader>
           {selectedGrievance && (
             <div className="space-y-4 py-4">
               <div>
                 <h4 className="font-semibold mb-2 text-sm">Description</h4>
-                <p className="text-muted-foreground text-sm">
-                  {selectedGrievance.description}
-                </p>
+                <p className="text-muted-foreground text-sm">{selectedGrievance.description}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <h4 className="font-semibold mb-2 text-sm">Status</h4>
-<<<<<<< HEAD
-                  <Badge
-                    className={getStatusColor(selectedGrievance.status)}
-                    variant="outline"
-                  >
-=======
                   <Badge className={getStatusColor(selectedGrievance.status)} variant="outline">
->>>>>>> 31c9ec0 (api integrations)
                     {selectedGrievance.status.replaceAll('_', ' ')}
                   </Badge>
                 </div>
-                <div>
+                 <div>
                   <h4 className="font-semibold mb-2 text-sm">Assigned To</h4>
                   <Badge variant="outline">{selectedGrievance.assigned_to}</Badge>
                 </div>
-                <div>
+                 <div>
                   <h4 className="font-semibold mb-2 text-sm">Cluster</h4>
                   <p className="text-muted-foreground">{selectedGrievance.cluster}</p>
-<<<<<<< HEAD
-                </div>
-                <div>
-=======
                  </div>
                  <div>
->>>>>>> 31c9ec0 (api integrations)
                   <h4 className="font-semibold mb-1 text-sm">Created At</h4>
                   <p className="text-muted-foreground">
                     {new Date(selectedGrievance.created_at).toLocaleString()}
@@ -528,46 +335,34 @@ export default function UserDashboard() {
                 </div>
               </div>
               <div>
-                <h4 className="font-semibold mb-2 text-sm">Tags</h4>
-                <div className="flex flex-wrap gap-2">
-                  {selectedGrievance.tags.map((tag) => (
-                    <Badge key={tag} variant="secondary">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
+                  <h4 className="font-semibold mb-2 text-sm">Tags</h4>
+                  <div className="flex flex-wrap gap-2">
+                      {selectedGrievance.tags.map(tag => (
+                          <Badge key={tag} variant="secondary">{tag}</Badge>
+                      ))}
+                  </div>
               </div>
 
-              {/* RATING SECTION */}
-              {selectedGrievance.status === 'SOLVED' && (
-                <div className="pt-4 border-t">
-                  <h4 className="font-semibold mb-2 text-sm">Rate your experience</h4>
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Star
-                        key={star}
-                        className={`w-6 h-6 cursor-pointer transition-colors ${
-                          star <= (hoverRating || selectedGrievance?.rating || 0)
-                            ? 'text-yellow-400 fill-yellow-400'
-                            : 'text-gray-300'
-                        }`}
-                        onMouseEnter={() => setHoverRating(star)}
-                        onMouseLeave={() => setHoverRating(0)}
-                        onClick={() => handleRating(star)}
-                      />
-                    ))}
+               {selectedGrievance.status === 'SOLVED' && (
+                  <div className="pt-4 border-t">
+                    <h4 className="font-semibold mb-2 text-sm">Rate your experience</h4>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          className={`w-6 h-6 cursor-pointer transition-colors ${
+                            star <= (hoverRating || selectedGrievance?.rating || 0)
+                              ? 'text-yellow-400 fill-yellow-400'
+                              : 'text-gray-300'
+                          }`}
+                          onMouseEnter={() => setHoverRating(star)}
+                          onMouseLeave={() => setHoverRating(0)}
+                          onClick={() => handleRating(star)}
+                        />
+                      ))}
+                    </div>
                   </div>
-<<<<<<< HEAD
-                  {selectedGrievance.rating && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      You rated this grievance {selectedGrievance.rating}/5 ⭐
-                    </p>
-                  )}
-                </div>
-              )}
-=======
                 )}
->>>>>>> 31c9ec0 (api integrations)
             </div>
           )}
         </DialogContent>
@@ -582,24 +377,10 @@ export default function UserDashboard() {
               Chat history for Grievance ID: {chatGrievance?.id}
             </DialogDescription>
           </DialogHeader>
-          <div
-            ref={chatContainerRef}
-            className="flex-grow space-y-4 overflow-y-auto p-4 border rounded-md bg-muted/50"
-          >
+          <div ref={chatContainerRef} className="flex-grow space-y-4 overflow-y-auto p-4 border rounded-md bg-muted/50">
             {chatGrievance?.chat?.map((chat, index) => (
-              <div
-                key={index}
-                className={`flex flex-col ${
-                  chat.role === 'student' ? 'items-end' : 'items-start'
-                }`}
-              >
-                <div
-                  className={`rounded-lg px-4 py-2 max-w-xs md:max-w-md ${
-                    chat.role === 'student'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-200 text-slate-900'
-                  }`}
-                >
+              <div key={index} className={`flex flex-col ${chat.role === 'student' ? 'items-end' : 'items-start'}`}>
+                <div className={`rounded-lg px-4 py-2 max-w-xs md:max-w-md ${chat.role === 'student' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-900'}`}>
                   <p className="text-sm">{chat.message}</p>
                 </div>
                 <span className="text-xs text-muted-foreground mt-1 px-1">
@@ -607,23 +388,22 @@ export default function UserDashboard() {
                 </span>
               </div>
             ))}
-            {chatGrievance?.chat?.length === 0 && (
-              <p className="text-center text-sm text-muted-foreground">
-                No messages yet.
-              </p>
-            )}
+             {chatGrievance?.chat?.length === 0 && <p className="text-center text-sm text-muted-foreground">No messages yet.</p>}
           </div>
-          <DialogFooter className="mt-auto pt-4 flex items-center gap-2">
-            <Textarea
-              placeholder="Type your message..."
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              className="flex-grow resize-none"
-              rows={2}
-            />
-            <Button onClick={handleSendMessage} disabled={!newMessage.trim()}>
-              <Send className="w-4 h-4 mr-1" /> Send
-            </Button>
+          <DialogFooter className="mt-auto pt-4">
+             <div className="flex w-full items-end gap-2">
+                <Textarea
+                    placeholder="Type your message..."
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    rows={1}
+                    className="flex-grow resize-none"
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
+                />
+                <Button onClick={handleSendMessage} size="icon" className="shrink-0">
+                    <Send className="w-4 h-4" />
+                </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

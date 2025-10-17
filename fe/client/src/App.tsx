@@ -54,6 +54,12 @@ function AppRouter() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/user/preview">
+        <ProtectedRoute allowedRole="user">
+          <GrievancePreview />
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/user/grievance-preview">
         <ProtectedRoute allowedRole="user">
           <GrievancePreview />

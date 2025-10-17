@@ -86,22 +86,37 @@ export default function SubmitGrievance() {
 
       const grievanceData = {
         title: formData.title,
-        description: formData.description || undefined,
+        description: formData.description, // Required field
         issue_tags: formData.issueTags.length > 0 ? formData.issueTags : undefined,
         cluster: formData.cluster || undefined,
         cluster_tags: formData.clusterTags.length > 0 ? formData.clusterTags : undefined,
         documents: documents.length > 0 ? documents : undefined,
+        preview: true, // Enable preview mode to get AI-generated tags and KB suggestions
       };
 
+      console.log('Submitting grievance in preview mode:', grievanceData);
       const response = await submitGrievance(grievanceData);
+      console.log('Received preview response:', response);
 
       toast({
-        title: 'Grievance Submitted',
-        description: `Your grievance has been submitted successfully. ID: ${response.grievance.id}`,
+        title: 'Processing Grievance',
+        description: 'AI is generating tags and finding relevant suggestions...',
       });
 
+      // Store preview data in sessionStorage for the preview page
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem('grievancePreview', JSON.stringify(response));
+          console.log('Stored preview data in sessionStorage');
+        } catch (err) {
+          console.warn('Failed to persist grievance preview payload:', err);
+        }
+      }
+
       setIsSubmitting(false);
-      setLocation('/user/dashboard');
+      // Navigate to preview page - data will be loaded from sessionStorage
+      console.log('Navigating to preview page');
+      setLocation('/user/preview');
     } catch (error) {
       console.error('Error submitting grievance:', error);
       toast({
@@ -140,13 +155,14 @@ export default function SubmitGrievance() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description (Optional)</Label>
+                <Label htmlFor="description">Description *</Label>
                 <Textarea
                   id="description"
                   placeholder="Provide detailed information about your grievance..."
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={6}
+                  required
                   data-testid="textarea-description"
                 />
               </div>
