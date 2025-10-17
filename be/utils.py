@@ -824,6 +824,48 @@ class OpenAIClientFacade:
             return completion.output_text
         return "AI summarization unavailable (missing OpenAI credentials)."
 
+    def generate_student_suggestion(self, grievance: Dict[str, Any], kb_chunks: List[Dict[str, Any]]) -> str:
+        """
+        Generate a short, actionable suggestion for students (30-40 words) using KB context.
+        """
+        if not self.client:
+            return "AI suggestions unavailable. Your grievance will be reviewed by our team."
+        
+        # Build context from KB chunks
+        kb_context = ""
+        if kb_chunks:
+            kb_context = "\n\n**Relevant Knowledge Base Information:**\n"
+            for i, chunk in enumerate(kb_chunks[:3], 1):  # Use top 3 chunks
+                doc_name = chunk.get("doc_name", "Document")
+                excerpt = chunk.get("excerpt", "")[:200]  # Limit excerpt length
+                kb_context += f"{i}. {doc_name}: {excerpt}\n"
+        
+        prompt = f"""You are a helpful assistant helping students with their campus grievances.
+
+**Grievance:**
+Title: {grievance.get('title', 'N/A')}
+Description: {grievance.get('description', 'N/A')}
+{kb_context}
+
+Provide a brief, actionable suggestion (30-40 words max) for the student. Use markdown formatting. Focus on:
+1. Immediate steps they can take
+2. Relevant resources from the knowledge base
+3. Expected timeline or next steps
+
+Keep it concise, friendly, and solution-focused."""
+
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.chat_model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=100,
+                temperature=0.7,
+            )
+            return completion.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"Error generating student suggestion: {e}")
+            return "Your grievance will be reviewed by our team shortly."
+
 
 def upload_documents_to_s3(grievance_id: int, documents: Iterable[Dict[str, Any]]) -> List[str]:
     if not documents:
@@ -950,11 +992,14 @@ def get_kb_suggestions_for_grievance(description: str, top_k: int = 3) -> List[D
 def generate_ai_suggestions(
     grievance: Dict[str, Any],
     related_grievances: Optional[List[Dict[str, Any]]] = None,
+    kb_chunks: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     facade = OpenAIClientFacade()
-    summary = facade.summarize_grievances([grievance])
+    
+    # Generate student-focused suggestion using KB chunks
+    student_suggestion = facade.generate_student_suggestion(grievance, kb_chunks or [])
 
-    suggestion_id = hashlib.sha256(str(grievance["id"]).encode()).hexdigest()[:12]
+    suggestion_id = hashlib.sha256(str(grievance.get("id", 0)).encode()).hexdigest()[:12]
     suggestion_payload = {
         "suggestions": [
             {
@@ -963,13 +1008,13 @@ def generate_ai_suggestions(
                     "doc_id": "knowledge_base_virtual",
                     "chunk_id": suggestion_id,
                 },
-                "summary": summary,
+                "summary": student_suggestion,
             }
         ],
         "kb_context_window": [
             {
                 "doc_name": "virtual_kb_entry.txt",
-                "excerpt": summary[:280] if summary else "Context unavailable.",
+                "excerpt": student_suggestion[:280] if student_suggestion else "Context unavailable.",
             }
         ],
         "related_grievances": related_grievances or [],

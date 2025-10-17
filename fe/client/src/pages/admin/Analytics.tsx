@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { Loader2, Sparkles } from 'lucide-react';
 import { getClusterAnalytics, getAISummary, getAdminGrievances } from '@/lib/grievancesApi';
 import { useToast } from '@/hooks/use-toast';
+import ReactMarkdown from 'react-markdown';
 
 export default function Analytics() {
   const [clusterData, setClusterData] = useState<{ cluster: string; count: number; top_tags: string[] }[]>([]);
@@ -169,7 +170,23 @@ export default function Analytics() {
           </CardHeader>
           <CardContent>
             {aiSummary ? (
-              <p className="text-muted-foreground leading-relaxed">{aiSummary}</p>
+              <div className="prose prose-sm max-w-none dark:prose-invert">
+                <ReactMarkdown
+                  components={{
+                    p: ({ children }) => <p className="text-muted-foreground leading-relaxed mb-3 last:mb-0">{children}</p>,
+                    strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                    em: ({ children }) => <em className="italic">{children}</em>,
+                    ul: ({ children }) => <ul className="list-disc list-inside text-muted-foreground space-y-1 my-3">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal list-inside text-muted-foreground space-y-1 my-3">{children}</ol>,
+                    li: ({ children }) => <li className="text-muted-foreground">{children}</li>,
+                    h1: ({ children }) => <h1 className="text-2xl font-bold text-foreground mt-4 mb-2">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-xl font-semibold text-foreground mt-3 mb-2">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-lg font-medium text-foreground mt-2 mb-1">{children}</h3>,
+                  }}
+                >
+                  {aiSummary}
+                </ReactMarkdown>
+              </div>
             ) : (
               <p className="text-muted-foreground text-center py-4">
                 Click "Generate Summary" to get AI-powered insights and trends.

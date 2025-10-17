@@ -161,10 +161,39 @@ def create_app() -> Flask:
                 issue_tags,
                 cluster_label,
             )
-            kb_suggestions = get_kb_suggestions_for_grievance(description, top_k=3)
+            
+            # Get relevant KB chunks
+            kb_chunks = get_kb_suggestions_for_grievance(description, top_k=5)
+            
+            # Generate AI-powered suggestions using the chunks
+            temp_grievance = {
+                "id": 0,  # Temporary ID for preview
+                "title": title,
+                "description": description,
+                "status": status.value,
+                "assigned_to": assigned.value,
+                "tags": issue_tags,
+                "cluster": cluster_label,
+                "cluster_tags": cluster_tags,
+            }
+            
+            # Use generate_ai_suggestions to get OpenAI-powered analysis
+            ai_suggestions = generate_ai_suggestions(temp_grievance, [], kb_chunks)
+            
+            # Combine KB chunks with AI suggestions
+            kb_suggestions_with_ai = []
+            for chunk in kb_chunks:
+                kb_suggestions_with_ai.append({
+                    "doc_name": chunk.get("doc_name", "Unknown Document"),
+                    "excerpt": chunk.get("excerpt", ""),
+                    "similarity_score": chunk.get("similarity_score", 0.0),
+                    "chunk_id": chunk.get("chunk_id", ""),
+                })
+            
             app.logger.info(
-                "create_grievance: preview completed suggestions=%d",
-                len(kb_suggestions),
+                "create_grievance: preview completed kb_chunks=%d ai_suggestions=%d",
+                len(kb_chunks),
+                len(ai_suggestions.get("suggestions", [])),
             )
             
             return jsonify({
@@ -179,7 +208,10 @@ def create_app() -> Flask:
                     "cluster_tags": cluster_tags,
                 },
                 "ai_generated_tags": issue_tags,
-                "kb_suggestions": kb_suggestions,
+                "kb_suggestions": kb_suggestions_with_ai,
+                "ai_suggestions": ai_suggestions.get("suggestions", []),
+                "ai_summary": ai_suggestions.get("suggestions", [{}])[0].get("summary", ""),
+                "related_grievances": ai_suggestions.get("related_grievances", []),
                 "documents": payload.get("documents", [])
             })
 

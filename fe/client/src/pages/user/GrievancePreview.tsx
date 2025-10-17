@@ -8,12 +8,22 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { submitGrievance } from '@/lib/grievancesApi';
+import ReactMarkdown from 'react-markdown';
 
 interface KBSuggestion {
   doc_name: string;
   excerpt: string;
   similarity_score: number;
   chunk_id: string;
+}
+
+interface AISuggestion {
+  confidence: number;
+  source: {
+    doc_id: string;
+    chunk_id: string;
+  };
+  summary: string;
 }
 
 interface PreviewData {
@@ -29,6 +39,9 @@ interface PreviewData {
   };
   ai_generated_tags: string[];
   kb_suggestions: KBSuggestion[];
+  ai_suggestions?: AISuggestion[];
+  ai_summary?: string;
+  related_grievances?: any[];
   documents?: any[];
 }
 
@@ -232,78 +245,40 @@ export default function GrievancePreview() {
 
             <Separator className="my-4" />
 
-            {/* Knowledge Base Suggestions */}
-            {previewData.kb_suggestions.length > 0 ? (
+            {/* AI Summary */}
+            {previewData.ai_summary && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="space-y-4"
+                transition={{ delay: 0.2 }}
+                className="space-y-3"
               >
-                <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-2">
                   <Bot className="w-5 h-5 text-primary" />
-                  <h3 className="font-medium text-primary">Knowledge Base Suggestions</h3>
+                  <h3 className="font-medium text-primary">AI Suggestion</h3>
                 </div>
-
-                <div className="space-y-3">
-                  {previewData.kb_suggestions.map((suggestion, index) => (
-                    <motion.div
-                      key={suggestion.chunk_id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.1 * index }}
-                      className="p-4 bg-muted/30 rounded-lg border border-border/30 space-y-2"
+                <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
+                  <div className="prose prose-sm max-w-none dark:prose-invert">
+                    <ReactMarkdown
+                      components={{
+                        p: ({ children }) => <p className="text-sm text-foreground leading-relaxed mb-2 last:mb-0">{children}</p>,
+                        strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                        em: ({ children }) => <em className="italic">{children}</em>,
+                        ul: ({ children }) => <ul className="list-disc list-inside text-sm space-y-1 my-2">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal list-inside text-sm space-y-1 my-2">{children}</ol>,
+                        li: ({ children }) => <li className="text-foreground">{children}</li>,
+                      }}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-sm">
-                          <FileText className="w-4 h-4 text-primary" />
-                          <span className="font-medium">{suggestion.doc_name}</span>
-                        </div>
-                        <Badge variant="outline" className="text-xs">
-                          {Math.round(suggestion.similarity_score * 100)}% match
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {suggestion.excerpt}
-                      </p>
-                    </motion.div>
-                  ))}
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="bg-muted/30 p-4 rounded-xl border border-border/30"
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <Bot className="w-5 h-5 text-primary" />
-                  <h3 className="font-medium text-primary">AI Feedback</h3>
-                </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  No similar content found in the knowledge base. Your grievance will be reviewed by our team.
-                </p>
-              </motion.div>
-            )}
-
-            {/* Uploaded Documents */}
-            {previewData.documents && previewData.documents.length > 0 && (
-              <>
-                <Separator className="my-4" />
-                <div className="space-y-2">
-                  <h3 className="font-medium">Uploaded Documents</h3>
-                  <div className="space-y-1">
-                    {previewData.documents.map((doc, index) => (
-                      <div key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <FileText className="w-4 h-4" />
-                        <span>{doc.filename}</span>
-                      </div>
-                    ))}
+                      {previewData.ai_summary}
+                    </ReactMarkdown>
                   </div>
                 </div>
-              </>
+              </motion.div>
             )}
+
+            {previewData.ai_summary && <Separator className="my-4" />}
+
+            
           </CardContent>
         </Card>
 
